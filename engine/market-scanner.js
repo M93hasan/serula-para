@@ -1,3 +1,4 @@
+import { decide } from './decision.js';
 const HOUR=3600000;
 const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const ema=(values,period)=>values.slice(1).reduce((acc,n)=>acc+(n-acc)*2/(period+1),values[0]);
@@ -44,7 +45,7 @@ export class MarketScanner {
   async #run(){
     const catalog=await this.#universe.discover();this.#state.total=catalog.markets.length;this.#state.catalogTime=catalog.exchangeTime;
     for(const m of catalog.markets){
-      if(m.type!==1){this.#state.results.push({symbol:m.symbol,status:'unsupported',reason:'Bu piyasa türünün veri bağlayıcısı henüz doğrulanmadı.'});continue;}
+      if(m.type!==1){this.#state.results.push({symbol:m.symbol,status:'unsupported',researchSignal:'BEKLE',reason:'Bu piyasa türünün veri bağlayıcısı henüz doğrulanmadı.'});continue;}
       try{
         const symbol=m.symbol.replace('_',''),rows=await this.#get('/api/v1/klines',{symbol,interval:'1h',limit:'100'}),book=await this.#get('/api/v3/depth',{symbol,limit:'5'}),trades=await this.#get('/api/v3/trades',{symbol,limit:'1'}),now=this.#clock();
         if(!Array.isArray(rows)||!Array.isArray(trades))throw Error('invalid response');
@@ -54,8 +55,9 @@ export class MarketScanner {
         const indicators=analyzeMarket(candles,book,now);
         // Quote units differ; no cross-quote liquidity or profit ranking is invented.
         const eligible=indicators.volume24>0&&indicators.topDepthQuote>0&&indicators.spread<=0.01;
-        this.#state.results.push({symbol:m.symbol,baseAsset:m.baseAsset,quoteAsset:m.quoteAsset,status:eligible?'candidate':'excluded',reason:eligible?'Ön inceleme; AI ve risk onayı gerekli.':'Hacim, derinlik veya makas yetersiz.',price,priceTime,asOf:now,indicators,candles});
-      }catch(e){if(['RATE_LIMIT','REGION_RESTRICTED'].includes(e.message)){this.#state.status=e.message;this.#state.finishedAt=this.#clock();return;}this.#state.results.push({symbol:m.symbol,status:'unavailable',reason:'Güncel veya geçerli veri yok.'});}
+        const signal=eligible?decide(m.symbol,candles):null;
+        this.#state.results.push({symbol:m.symbol,baseAsset:m.baseAsset,quoteAsset:m.quoteAsset,status:eligible?'candidate':'excluded',researchSignal:signal?.action??'BEKLE',signalReason:signal?.reason??'Piyasa ön filtreleri sağlanmadı.',signalScore:signal?.score??0,reason:eligible?'Kural tabanlı araştırma sinyali; AI ve risk onayı gerekli.':'Hacim, derinlik veya makas yetersiz.',price,priceTime,asOf:now,indicators,candles});
+      }catch(e){if(['RATE_LIMIT','REGION_RESTRICTED'].includes(e.message)){this.#state.status=e.message;this.#state.finishedAt=this.#clock();return;}this.#state.results.push({symbol:m.symbol,status:'unavailable',researchSignal:'BEKLE',reason:'Güncel veya geçerli veri yok.'});}
     }
     this.#state.status='complete';this.#state.finishedAt=this.#clock();
   }
