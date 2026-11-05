@@ -39,7 +39,7 @@ PR #7'nin `feat/para-integrated-validation` dalı, PR #5'in arayüzünü ve PR #
 ## Devam eden / planlanan görevler
 
 1. **AI çoklu ajan analizi ve entegrasyonu:** [Issue #2'deki görev](https://github.com/M93hasan/serula-para/issues/2) kapsamında `TauricResearch/TradingAgents` ile `auronsun/TradingAgents-crypto` karşılaştırılacak; doğru seçenek ayrı PR'da salt-okunur/simülasyon olarak uyarlanacak. Bu görev planlanmıştır; bir AI PR'ı teslim edildiği doğrulanmadı.
-2. **Web sitesi üzerinden güvenli giriş (yeni kullanıcı isteği):** Mevcut yalnızca localhost'a ait bearer erişimi dış internete açılmamalı. Uygun bir web frontend + sunucu oturumu, güvenli kimlik doğrulama, CSRF, cookie, rate limiting, kullanıcı ayrımı, gizli bilgi saklama ve Cloudflare mimarisi için inceleme/ayrı PR gereklidir. İstenen olası adres `para.serula.site` ancak DNS/domain yetkisi ve nihai domain onayı ayrı doğrulanmalı. Canlı yayın kendiliğinden yapılmayacak.
+2. **Web sitesi üzerinden güvenli giriş (yeni kullanıcı isteği):** Mevcut yalnızca localhost'a ait bearer erişimi dış internete açılmamalı. Uygun bir web frontend + sunucu oturumu, güvenli kimlik doğrulama, CSRF, cookie, rate limiting, kullanıcı ayrımı, gizli bilgi saklama ve Cloudflare mimarisi için inceleme/ayrı PR gereklidir. **Kullanıcının 2026-11-05 tarihinde onayladığı kesin hedef alan adı: `para.serula.site`.** DNS/domain yönetimi ve erişim yetkileri henüz doğrulanmadı; alan adının onaylanması dağıtım veya canlıya alma onayı anlamına gelmez. Canlı yayın kendiliğinden yapılmayacak.
 3. Ortak entegrasyon PR #7 için son Windows/browser testleri; CI kanıtı ve güvenlik kontrolü.
 4. PR #1–#7 main'e merge edilmedi; önce bağımlılık sırası, koruma ve açık onay gereklidir.
 
