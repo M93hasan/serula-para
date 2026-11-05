@@ -28,8 +28,8 @@ export function createServer({ token, simulator, paper = null, account = null, m
     res.setHeader('Content-Security-Policy', "default-src 'self'; connect-src 'self'; script-src 'self'; style-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
     const port=String(req.socket.localPort), host=`127.0.0.1:${port}`, origin=`http://${host}`;
     if(req.headers.host!==host || (req.headers.origin && req.headers.origin!==origin) || (req.headers['sec-fetch-site'] && !['same-origin','none'].includes(req.headers['sec-fetch-site']))) {res.writeHead(403).end(); return;}
-    if(req.method==='GET' && (req.url==='/' || /^\/assets\/[A-Za-z0-9_-]+\.(js|css)$/.test(req.url))) {
-      try {const path=req.url==='/'?'index.html':req.url.slice(1); const data=readFileSync(join(distDir,path)); res.setHeader('Content-Type',path.endsWith('.js')?'text/javascript; charset=utf-8':path.endsWith('.css')?'text/css; charset=utf-8':'text/html; charset=utf-8'); res.end(data);} catch {res.writeHead(404).end();} return;
+    if(req.method==='GET' && (req.url==='/' || /^\/assets\/[A-Za-z0-9_-]+\.(js|css|ttf)$/.test(req.url))) {
+      try {const path=req.url==='/'?'index.html':req.url.slice(1); const data=readFileSync(join(distDir,path)); res.setHeader('Content-Type',path.endsWith('.js')?'text/javascript; charset=utf-8':path.endsWith('.css')?'text/css; charset=utf-8':path.endsWith('.ttf')?'font/ttf':'text/html; charset=utf-8'); res.end(data);} catch {res.writeHead(404).end();} return;
     }
     res.setHeader('Content-Type','application/json');
     const auth=Buffer.from(req.headers.authorization || '');
