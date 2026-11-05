@@ -4,6 +4,7 @@
   "name": "serula-para",
   "compatibility_date": "2026-11-05",
   "main": "cloudflare/worker.js",
+  "previews": {},
   "assets": {
     "directory": "./dist",
     "binding": "ASSETS",
