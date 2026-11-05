@@ -1,41 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import worker from '../cloudflare/worker.js';
-
-const env = {
-  ASSETS: {
-    fetch: async () => new Response('<!doctype html><title>PARA</title>', {
-      headers: { 'Content-Type': 'text/html; charset=utf-8' }
-    })
-  }
-};
-
-test('web API denies access to local engine and keys', async () => {
-  for (const path of ['/api/account', '/api/analysis', '/api/vault', '/api/ai/history']) {
-    const res = await worker.fetch(new Request('https://preview.example'+path), env);
-    assert.equal(res.status, 503);
-    assert.equal((await res.json()).error, 'WEB_BACKEND_UNAVAILABLE');
-    assert.equal(res.headers.get('Cache-Control'), 'no-store');
-  }
-});
-
-test('public status discloses no private account data', async () => {
-  const res = await worker.fetch(new Request('https://preview.example/api/health'), env);
-  assert.equal(res.status, 200);
-  assert.deepEqual(await res.json(), {
-    status: 'preview-only', api_available: false, real_orders_enabled: false
-  });
-});
-
-test('static preview serves assets with browser security headers', async () => {
-  const res = await worker.fetch(new Request('https://preview.example/'), env);
-  assert.equal(res.status, 200);
-  assert.equal(res.headers.get('X-Frame-Options'), 'DENY');
-  assert.equal(res.headers.get('Cache-Control'), 'no-store');
-  assert.match(res.headers.get('Content-Security-Policy'), /connect-src 'self'/);
-});
-
-test('non-read HTTP methods are rejected outside API', async () => {
-  const res = await worker.fetch(new Request('https://preview.example/', {method: 'POST'}), env);
-  assert.equal(res.status, 405);
-});
+import { generateKeyPair, SignJWT } from 'jose';
+import { createWorker } from '../cloudflare/worker.js';
+import { verifyAccess } from '../cloudflare/access.js';
+const env={ACCESS_AUD:'aud',ACCESS_ISSUER:'https://example.cloudflareaccess.com',ASSETS:{fetch:async()=>new Response('<!doctype html><title>PARA</title>',{headers:{'Content-Type':'text/html'}})},ANALYSIS_LIMIT:{limit:async()=>({success:true})}};
+test('Access signature issuer audience and expiry are required',async()=>{const {publicKey,privateKey}=await generateKeyPair('RS256');const token=await new SignJWT({}).setProtectedHeader({alg:'RS256'}).setIssuer(env.ACCESS_ISSUER).setAudience(env.ACCESS_AUD).setSubject('test-user').setIssuedAt().setExpirationTime('2m').sign(privateKey);assert.equal((await verifyAccess(token,env,publicKey)).id,'test-user');await assert.rejects(verifyAccess(token,{...env,ACCESS_AUD:'other'},publicKey));await assert.rejects(verifyAccess(token,{...env,ACCESS_ISSUER:'https://evil.example'},publicKey));await assert.rejects(verifyAccess('bad',env,publicKey));});
+test('unauthorized users cannot access assets or APIs',async()=>{let reads=0;const worker=createWorker({verify:async()=>{throw Error('invalid');}}),e={...env,ASSETS:{fetch:async()=>{reads++;return new Response('private');}}};for(const path of ['/','/assets/index.js','/api/auth/me','/api/analysis']){const r=await worker.fetch(new Request('https://preview.example'+path),e);assert.equal(r.status,401);}assert.equal(reads,0);});
+test('authenticated identity can access panel but account, orders and AI remain unavailable',async()=>{const worker=createWorker({verify:async()=>({id:'user'})});assert.equal((await worker.fetch(new Request('https://preview.example/'),env)).status,200);assert.equal((await worker.fetch(new Request('https://preview.example/api/auth/me'),env)).status,200);for(const p of ['/api/binance-tr/test','/api/orders','/api/ai/history'])assert.equal((await worker.fetch(new Request('https://preview.example'+p),env)).status,503);});
+test('analysis requires same-origin and configured rate limit',async()=>{const worker=createWorker({verify:async()=>({id:'user'})});const request=(origin)=>new Request('https://preview.example/api/analysis',{method:'POST',headers:{Origin:origin,'Sec-Fetch-Site':'same-origin','Content-Type':'application/json','X-Para-Request':'1'},body:'{}'});assert.equal((await worker.fetch(request('https://bad.example'),env)).status,403);assert.equal((await worker.fetch(request('https://preview.example'),{...env,ANALYSIS_LIMIT:null})).status,503);});
