@@ -15,7 +15,11 @@ export class MarketUniverse {
         if(!item||typeof item.symbol!=='string'||typeof item.baseAsset!=='string'||typeof item.quoteAsset!=='string'||!/^([A-Z0-9]{1,20})_([A-Z0-9]{1,20})$/.test(item.symbol)||item.symbol!==`${item.baseAsset}_${item.quoteAsset}`||seen.has(item.symbol))throw Error('Invalid symbol catalogue');
         seen.add(item.symbol);
         if(item.spotTradingEnable!==1||(item.status!==undefined&&item.status!=='TRADING')){ineligible++;continue;}
-        markets.push({symbol:item.symbol,baseAsset:item.baseAsset,quoteAsset:item.quoteAsset,type:item.type,analysisStatus:'NOT_SCANNED'});
+        const byType=type=>Array.isArray(item.filters)?item.filters.find(f=>f?.filterType===type):null;
+        const priceFilter=byType('PRICE_FILTER'),lot=byType('LOT_SIZE'),notional=byType('NOTIONAL')||byType('MIN_NOTIONAL');
+        const decimal=value=>typeof value==='string'&&/^\d+(\.\d+)?$/.test(value)&&Number(value)>0?value:null;
+        const filters={tickSize:decimal(priceFilter?.tickSize),stepSize:decimal(lot?.stepSize),minQty:decimal(lot?.minQty),minNotional:decimal(notional?.minNotional)};
+        markets.push({symbol:item.symbol,baseAsset:item.baseAsset,quoteAsset:item.quoteAsset,type:item.type,filters,filtersPresent:Object.values(filters).every(Boolean),analysisStatus:'NOT_SCANNED'});
       }
       return this.#cache={receivedAt:this.#clock(),exchangeTime:payload.timestamp,listed:list.length,eligible:markets.length,ineligible,markets,notice:'Yalnızca parite listesi; piyasa taraması ve fırsat tespiti henüz uygulanmadı.'};
     })();

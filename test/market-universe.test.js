@@ -10,3 +10,7 @@ test('discovers arbitrary active pairs, includes types and quote assets, and cac
 test('rejects stale, duplicate, or invalid catalogues without returning cached guesses',async()=>{
  for(const response of [{code:0,timestamp:now-120001,data:{list:[pair('BTC','TRY')]}},{code:0,timestamp:now,data:{list:[pair('BTC','TRY'),pair('BTC','TRY')]}},{code:0,timestamp:now,data:{list:[{...pair('BTC','TRY'),symbol:'BTC_ETH'}]}}]){const u=new MarketUniverse({clock:()=>now,exchange:{symbols:async()=>response}});await assert.rejects(u.discover());}
 });
+test('exchange filter fields are retained without inventing missing values',async()=>{
+ const market={...pair('SOL','TRY'),filters:[{filterType:'PRICE_FILTER',tickSize:'0.01'},{filterType:'LOT_SIZE',stepSize:'0.001',minQty:'0.01'}]};
+ const u=new MarketUniverse({clock:()=>now,exchange:{symbols:async()=>({code:0,timestamp:now,data:{list:[market]}})}});const [result]=(await u.discover()).markets;assert.equal(result.filters.tickSize,'0.01');assert.equal(result.filters.minNotional,null);assert.equal(result.filtersPresent,false);
+});

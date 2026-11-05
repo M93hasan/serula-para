@@ -8,11 +8,13 @@ export function analyzeMarket(candles,book,now=Date.now()) {
   if(now-candles.at(-1).closeTime>2*HOUR)throw Error('stale candles');
   const bid=Number(book?.bids?.[0]?.[0]),bidQty=Number(book?.bids?.[0]?.[1]),ask=Number(book?.asks?.[0]?.[0]),askQty=Number(book?.asks?.[0]?.[1]);
   if(![bid,bidQty,ask,askQty].every(n=>Number.isFinite(n)&&n>0)||ask<bid)throw Error('invalid order book');
+  const depth=(rows,side)=>{if(!Array.isArray(rows)||!rows.length||rows.length>5)throw Error('invalid order book');let prev=side==='bid'?Infinity:0,total=0;for(const row of rows){const p=Number(row?.[0]),q=Number(row?.[1]);if(!Number.isFinite(p)||!Number.isFinite(q)||p<=0||q<=0||(side==='bid'?p>prev:p<prev))throw Error('invalid order book');total+=p*q;prev=p;}return total;};
+  const depthQuote=Math.min(depth(book.bids,'bid'),depth(book.asks,'ask'));
   const closes=candles.map(c=>c.close),delta=closes.slice(-15).slice(1).map((n,i)=>n-closes[closes.length-15+i]);
   const gain=delta.reduce((a,n)=>a+Math.max(n,0),0)/14,loss=delta.reduce((a,n)=>a+Math.max(-n,0),0)/14;
   const returns=closes.slice(-21).slice(1).map((n,i)=>n/closes[closes.length-21+i]-1),mean=returns.reduce((a,b)=>a+b,0)/returns.length;
   const spread=(ask-bid)/((ask+bid)/2),volume24=candles.slice(-24).reduce((a,c)=>a+c.quoteVolume,0),volatility=Math.sqrt(returns.reduce((a,n)=>a+(n-mean)**2,0)/returns.length);
-  return {rsi:loss===0?(gain===0?50:100):100-100/(1+gain/loss),ema12:ema(closes,12),ema26:ema(closes,26),macd:ema(closes,12)-ema(closes,26),volatility,spread,volume24,topDepthQuote:Math.min(bid*bidQty,ask*askQty),bid,ask,feeAssumption:0.001,slippageAssumption:0.001,estimatedRoundTripCost:2*(0.001+0.001)+spread};
+  return {rsi:loss===0?(gain===0?50:100):100-100/(1+gain/loss),ema12:ema(closes,12),ema26:ema(closes,26),macd:ema(closes,12)-ema(closes,26),volatility,spread,volume24,topDepthQuote:Math.min(bid*bidQty,ask*askQty),depthQuote,bid,ask,feeAssumption:0.001,slippageAssumption:0.001,estimatedRoundTripCost:2*(0.001+0.001)+spread};
 }
 
 // One GET at a time; this component has no account or trading methods.
