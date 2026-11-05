@@ -14,6 +14,18 @@ export class PaperPortfolio {
   halt(){this.#halted=true;}
   start(){if([...this.#quotes.values()].some(q=>q.realized<=-q.maxLoss))throw Error('LOSS_LIMIT');this.#halted=false;}
   status(){return {mode:'paper',realOrdersEnabled:false,halted:this.#halted,quotes:[...this.#quotes.values()].map(q=>({...q})),positions:[...this.#positions.values()].map(p=>({...p}))};}
+  value(prices,now=Date.now()){
+    if(!Array.isArray(prices)||!Number.isSafeInteger(now))throw Error('INVALID_INPUT');
+    const positions=[...this.#positions.values()].map(p=>{
+      const matches=prices.filter(x=>x.symbol===p.symbol),x=matches[0];
+      if(matches.length!==1||!positive(x?.price)||!Number.isSafeInteger(x?.priceTime)||x.priceTime>now||now-x.priceTime>30000)return {...p,valuation:'unavailable',marketValue:null,unrealized:null};
+      const gross=money(p.quantity,x.price,false),slip=cost(gross,this.slippageBps),fee=cost(gross+slip,this.feeBps),net=gross-slip-fee;
+      if(!Number.isSafeInteger(net)||net<0)return {...p,valuation:'unavailable',marketValue:null,unrealized:null};
+      return {...p,valuation:'available',priceTime:x.priceTime,marketValue:net,unrealized:net-p.entryCost};
+    });
+    const quotes=[...this.#quotes.values()].map(q=>{const open=positions.filter(p=>p.quoteAsset===q.asset),missing=open.some(p=>p.marketValue===null),marketValue=missing?null:open.reduce((s,p)=>s+p.marketValue,0),equity=missing?null:q.cash+marketValue,unrealized=missing?null:open.reduce((s,p)=>s+p.unrealized,0);return {asset:q.asset,cash:q.cash,realized:q.realized,fees:q.fees,exposureAtCost:open.reduce((s,p)=>s+p.entryCost,0),marketValue,equity,unrealized,lossLimitBreached:equity===null?null:equity<=q.budget-q.maxLoss};});
+    return {mode:'paper',quotes,positions,combinedTotal:null,notice:'Kotasyon para birimleri dönüşüm olmadan toplanmaz; eksik fiyatlar toplamı belirsiz kılar.'};
+  }
   execute({id,action,symbol,baseAsset,quoteAsset,quantity,price,priceTime},now=Date.now()){
     if(typeof id!=='string'||!/^[A-Za-z0-9_-]{1,80}$/.test(id))throw Error('INVALID_ID');
     const key=JSON.stringify({action,symbol,baseAsset,quoteAsset,quantity,price,priceTime});const prior=this.#ids.get(id);if(prior){if(prior.key!==key)throw Error('ID_CONFLICT');return {...prior.result};}
