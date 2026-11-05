@@ -50,3 +50,13 @@ PR #7'nin `feat/para-integrated-validation` dalı, PR #5'in arayüzünü ve PR #
 - Binance API Key/Secret, şifreli kasa parolası, yerel bearer token, LLM API Key veya kişisel bilgileri issue, PR, log ya da UI'ye kaydetme.
 - Web girişinin localhost oturumundan **tamamen ayrı güvenli bir mimari** gerektirdiğini varsay; web erişimini yerel portu açarak sağlamaya çalışma.
 - Bu durum anlık görüntüsünü yenilemek gerektiğinde yeni kanıtı ve SHA'yı ekle, gerçekte test edilmemiş sonuçları başarılı diye işaretleme.
+
+## PR #9 — deneysel yerel çok rollü AI (2026-11-05 güncellemesi)
+
+- [PR #9](https://github.com/M93hasan/serula-para/pull/9): `feat/para-local-ai-research`, base `feat/para-integrated-validation` (PR #7); taslak/açık, merge edilmedi. HEAD `8a0dec2ac7169082d4ef60eb90dca583e39f1148`.
+- Değişen dosyalar: `README.md`, `docs/progress.md`, `docs/tradingagents-assessment.md`, `engine/ai-analyst.js`, `engine/server.js`, `engine/store.js`, `src/main.js`, `test/ai-analyst.test.js`.
+- Ajanın raporuna göre: güncel orijinal `TauricResearch/TradingAgents` tercih edildi; crypto fork'un Binance entegrasyonu kaynak kodda doğrulanamadı. **Orijinal TradingAgents Python/LangGraph paketi entegre edilmedi.** Bunun yerine yerel Ollama için deneysel 5 rollü araştırma adaptörü var.
+- Yalnızca izin verilen Binance TR piyasa verilerinden analiz; haber ve tam risk girdileri eksikse nihai **BEKLE**. Piyasa, yükseliş, düşüş, risk ve sonuç rolleri; yerel karar kayıtları. Şifreler, hesap bakiyeleri ve emir yetkileri modele verilmez.
+- Ajana göre 30 genel test, son değişikliklerden sonra 4 odak AI testi ve build başarılı; sahte LLM kullanıldı. GitHub Actions PR-head iş akışı kaydı bu kontrol sırasında bulunamadı; bu oturumda testler yeniden çalıştırılmadı.
+- **Eksik**: gerçek Ollama + Windows + canlı piyasa uçtan uca doğrulama; gerçek TradingAgents paketi; doğrulanabilir haber; AI geçmiş/backtest performansı; OpenAI/Gemini/Claude. Mevcut backtest, AI başarısı olarak gösterilmemeli.
+- Bundan sonraki geliştirme PR #9 üstünde uygun ayrı dal veya ajanın PR'ına hedefli ek commit ile yapılmalı; PR #7 arayüzünü, şifreli kasayı ve web girişi planını bozmamalı. Üretime/gerçek emre kapalı.
