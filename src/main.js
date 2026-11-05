@@ -92,11 +92,41 @@ $('#workspace-toggle').addEventListener('click',()=>{
 
 document.querySelectorAll('.nav').forEach(x=>x.addEventListener('click',()=>navigate(x.dataset.view)));document.querySelectorAll('[data-goto]').forEach(x=>x.addEventListener('click',()=>navigate(x.dataset.goto)));
 const webMode=location.hostname!=='127.0.0.1'||location.port!=='8788';
-async function api(path,body){if(!token)throw Error('Önce güvenli oturum açın.');let res;try{res=await fetch(path,{method:body?'POST':'GET',headers:{...(!webMode?{Authorization:`Bearer ${token}`}:{}) ,...(body?{'Content-Type':'application/json','X-Para-Request':'1'}:{})},body:body?JSON.stringify(body):undefined,cache:'no-store'});}catch{throw Error('Yerel motora ulaşılamadı.');}if(!res.ok){const payload=await res.json().catch(()=>({}));const analysisErrors={REGION_RESTRICTED:'Binance TR piyasa verisi bu ağ veya bölgeden erişilemiyor. Kendi bağlantınızda tekrar deneyin.',INVALID_RISK:'Bütçe, işlem limiti, zarar eşiği ve komisyon ayarlarını kontrol edin.',INVALID_SYMBOL:'Seçilen parite desteklenmiyor.',CLOCK_INVALID:'Bilgisayar saatini otomatik eşitleyip tekrar deneyin.',RATE_LIMIT:'Çok sık istek gönderildi. En az 30 saniye bekleyip tekrar deneyin.',STALE_DATA:'Piyasa verisi eski veya eksik; daha sonra tekrar deneyin.',MARKET_UNAVAILABLE:'Bu paritenin Binance TR verisi bulunamadı.',MARKET_CONNECTION:'Binance TR piyasa verisine ulaşılamadı. İnternet bağlantısını kontrol edin.'};if(analysisErrors[payload.error])throw Error(analysisErrors[payload.error]);if(payload.error==='AUTH_REQUIRED')throw Error('Oturum sona erdi. Sayfayı yenileyip tekrar giriş yapın.');if(payload.error==='VAULT_UNLOCK_FAILED')throw Error('Kasa açılamadı. Parolanızı kontrol edin.');if(payload.error==='EXCHANGE_READ_FAILED')throw Error('Binance TR hesabına ulaşılamadı. API okuma iznini, ağ bağlantısını ve bilgisayar saatini kontrol edin.');throw Error(res.status===403?'Erişim reddedildi. Yerel bağlantıyı ve yetkiyi kontrol edin.':res.status===503?'Piyasa verisi alınamadı. Ağ, zaman ayarı veya istek sınırını kontrol edin.':'İşlem başarısız. Kasa parolasını ve API izinlerini kontrol edin.');}return res.json();}
+async function api(path,body){if(!token)throw Error('Önce güvenli oturum açın.');let res;try{res=await fetch(path,{method:body?'POST':'GET',headers:{...(!webMode&&token!=='google-session'?{Authorization:`Bearer ${token}`}:{}) ,...(body?{'Content-Type':'application/json','X-Para-Request':'1'}:{})},body:body?JSON.stringify(body):undefined,cache:'no-store'});}catch{throw Error('Yerel motora ulaşılamadı.');}if(!res.ok){const payload=await res.json().catch(()=>({}));const analysisErrors={REGION_RESTRICTED:'Binance TR piyasa verisi bu ağ veya bölgeden erişilemiyor. Kendi bağlantınızda tekrar deneyin.',INVALID_RISK:'Bütçe, işlem limiti, zarar eşiği ve komisyon ayarlarını kontrol edin.',INVALID_SYMBOL:'Seçilen parite desteklenmiyor.',CLOCK_INVALID:'Bilgisayar saatini otomatik eşitleyip tekrar deneyin.',RATE_LIMIT:'Çok sık istek gönderildi. En az 30 saniye bekleyip tekrar deneyin.',STALE_DATA:'Piyasa verisi eski veya eksik; daha sonra tekrar deneyin.',MARKET_UNAVAILABLE:'Bu paritenin Binance TR verisi bulunamadı.',MARKET_CONNECTION:'Binance TR piyasa verisine ulaşılamadı. İnternet bağlantısını kontrol edin.'};if(analysisErrors[payload.error])throw Error(analysisErrors[payload.error]);if(payload.error==='AUTH_REQUIRED')throw Error('Oturum sona erdi. Sayfayı yenileyip tekrar giriş yapın.');if(payload.error==='VAULT_UNLOCK_FAILED')throw Error('Kasa açılamadı. Parolanızı kontrol edin.');if(payload.error==='EXCHANGE_READ_FAILED')throw Error('Binance TR hesabına ulaşılamadı. API okuma iznini, ağ bağlantısını ve bilgisayar saatini kontrol edin.');throw Error(res.status===403?'Erişim reddedildi. Yerel bağlantıyı ve yetkiyi kontrol edin.':res.status===503?'Piyasa verisi alınamadı. Ağ, zaman ayarı veya istek sınırını kontrol edin.':'İşlem başarısız. Kasa parolasını ve API izinlerini kontrol edin.');}return res.json();}
 function setControls(configured){$('#tr-save').disabled=configured;for(const id of ['tr-test','tr-change','tr-delete'])$(`#${id}`).disabled=!configured;}
 function clearKeys(){for(const id of ['tr-key','tr-secret','tr-pass'])$(`#${id}`).value='';}
 function clearBalance(){balances=null;renderPortfolio();}
-$('#local-login').addEventListener('submit',async e=>{e.preventDefault();token=$('#local-token').value;$('#local-token').value='';try{await api('/status');const s=await api('/api/binance-tr/settings');setControls(s.configured);text('#local-status','Yerel motor bağlı · gerçek emirler kapalı');text('#tr-state',s.configured?'Kasa kayıtlı. Bağlantıyı test edin.':'API bilgileri kayıtlı değil.');$('#local-halt').disabled=false;$('#analysis-run').disabled=false;$('#analysis-auto').disabled=false;$('#ai-run').disabled=false;refreshAIHistory().catch(()=>{});text('#analysis-status','Analiz başlatılabilir.');refreshAccountHistory().catch(()=>{});refreshScan().catch(()=>{});}catch(err){token='';setControls(false);$('#tr-save').disabled=true;$('#local-halt').disabled=true;$('#analysis-run').disabled=true;$('#analysis-auto').disabled=true;$('#ai-run').disabled=true;$('#analysis-auto').checked=false;clearBalance();text('#local-status',err.message);}});
+async function activateLocalSession(){
+  try{
+    await api('/status');const s=await api('/api/binance-tr/settings');
+    setControls(s.configured);text('#local-status',token==='google-session'?'Google oturumu açık · yerel motor bağlı':'Yerel motor bağlı · gerçek emirler kapalı');
+    text('#tr-state',s.configured?'Kasa kayıtlı. Bağlantıyı test edin.':'API bilgileri kayıtlı değil.');
+    $('#local-halt').disabled=false;$('#analysis-run').disabled=false;$('#analysis-auto').disabled=false;$('#ai-run').disabled=false;
+    refreshAIHistory().catch(()=>{});text('#analysis-status','Analiz başlatılabilir.');refreshAccountHistory().catch(()=>{});refreshScan().catch(()=>{});
+    if(token==='google-session')$('#google-logout').hidden=false;
+  }catch(err){
+    token='';setControls(false);$('#tr-save').disabled=true;$('#local-halt').disabled=true;$('#analysis-run').disabled=true;
+    $('#analysis-auto').disabled=true;$('#ai-run').disabled=true;$('#analysis-auto').checked=false;clearBalance();text('#local-status',err.message);
+  }
+}
+$('#local-login').addEventListener('submit',async e=>{e.preventDefault();token=$('#local-token').value;$('#local-token').value='';await activateLocalSession();});
+const googleBox=document.createElement('div');
+googleBox.innerHTML='<button id="google-login" type="button" class="primary full" hidden>Google ile giriş yap</button><button id="google-logout" type="button" class="full" hidden>Google oturumunu kapat</button><p id="google-login-status" role="status">Google girişi kontrol ediliyor.</p>';
+$('#local-login').before(googleBox);
+$('#google-login').addEventListener('click',()=>{location.assign('/auth/google/start');});
+$('#google-logout').addEventListener('click',async()=>{
+  try{await fetch('/auth/google/logout',{method:'POST',headers:{'X-Para-Request':'1'},credentials:'same-origin',cache:'no-store'});}
+  finally{location.reload();}
+});
+if(!webMode){
+  fetch('/auth/google/status',{cache:'no-store'}).then(r=>r.json()).then(async state=>{
+    if(!state.configured){text('#google-login-status','Google girişi bu bilgisayarda henüz yapılandırılmadı. Eski yerel anahtar girişi kullanılabilir.');return;}
+    $('#google-login').hidden=false;text('#google-login-status','Google oturumu yalnızca bu Windows bilgisayarında geçerlidir. Binance kasası ayrıca korunur.');
+    const me=await fetch('/api/auth/me',{cache:'no-store'});
+    if(me.ok){token='google-session';await activateLocalSession();}
+  }).catch(()=>text('#google-login-status','Google oturumu kontrol edilemedi; yerel anahtar girişi kullanılabilir.'));
+}
+
 $('#local-halt').addEventListener('click',async()=>{try{await api('/halt',{});text('#local-status','Acil durdurma etkin · gerçek emirler kapalı');}catch(e){text('#local-status',e.message);}});
 async function saveCredentials(replace){const body={apiKey:$('#tr-key').value,secretKey:$('#tr-secret').value,passphrase:$('#tr-pass').value,replace};clearKeys();clearBalance();try{await api('/api/binance-tr/save',body);setControls(true);text('#tr-state','Kasa kaydedildi. Bağlantıyı test edin.');text('#tr-overview','Bağlı değil');}catch(e){text('#tr-state',e.message);}}
 $('#tr-save').addEventListener('click',()=>saveCredentials(false));$('#tr-change').addEventListener('click',()=>saveCredentials(true));
@@ -184,7 +214,8 @@ $('#ai-run').addEventListener('click',async()=>{const btn=$('#ai-run');btn.disab
 if(webMode){
   $('#local-token').disabled=true;$('#local-login button').disabled=true;
   for(const id of ['tr-key','tr-secret','tr-pass','tr-save','tr-test','tr-change','tr-delete','local-halt','ai-run']){const el=$(`#${id}`);if(el)el.disabled=true;}
-  text('#local-status','Web oturumu Cloudflare Access tarafından korunur.');
+  text('#local-status','Web girişi Cloudflare Access üzerinden korunur. Google ile girişin çalışması için yöneticinin Google kimlik sağlayıcısını etkinleştirmesi gerekir.');
+  const cloudLogin=document.createElement('a');cloudLogin.href='/cdn-cgi/access/login';cloudLogin.textContent='Google ile giriş / Cloudflare Access';cloudLogin.className='primary';$('#local-login').before(cloudLogin);
   text('#tr-state','Binance TR hesap bağlantısı ve şifreli kasa web sürümünde henüz kullanılamıyor.');
   text('#ai-status','AI analizi web sürümünde henüz kullanılamıyor.');
   fetch('/api/auth/me',{cache:'no-store'}).then(r=>{if(!r.ok)throw Error('no session');return r.json();}).then(()=>{token='web-session';$('#analysis-run').disabled=false;$('#analysis-auto').disabled=false;text('#analysis-status','Web araştırma analizi başlatılabilir.');}).catch(()=>{text('#local-status','Web oturumu doğrulanamadı.');});
