@@ -38,3 +38,8 @@ test('account endpoints require token, same origin, JSON and never return secret
   assert.equal((await fetch(url+'delete',{method:'POST',headers,body:JSON.stringify({passphrase})})).status,200);
  }finally{await new Promise(r=>server.close(r));store.close();rmSync(dir,{recursive:true,force:true});}
 });
+test('oversized request is rejected without creating a vault',async()=>{
+ const dir=mkdtempSync(join(tmpdir(),'para-limit-')),path=join(dir,'vault'),token='z'.repeat(40),store=new RiskStore(':memory:',{budget:1000,maxTrade:100,maxLoss:100});
+ const account=new AccountService({path});const server=createServer({token,simulator:store,account});await new Promise(r=>server.listen(0,'127.0.0.1',r));
+ try{const origin=`http://127.0.0.1:${server.address().port}`;const response=await fetch(origin+'/api/binance-tr/save',{method:'POST',headers:{Authorization:`Bearer ${token}`,Origin:origin,'Sec-Fetch-Site':'same-origin','Content-Type':'application/json','X-Para-Request':'1'},body:JSON.stringify({apiKey:'x'.repeat(9000)})});assert.equal(response.status,413);assert.equal(account.exists(),false);}finally{await new Promise(r=>server.close(r));store.close();rmSync(dir,{recursive:true,force:true});}
+});
