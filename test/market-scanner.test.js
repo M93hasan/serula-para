@@ -1,9 +1,10 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {analyzeMarket,MarketScanner} from '../engine/market-scanner.js';
+import {analyzeMarket,MarketScanner,estimateDepth} from '../engine/market-scanner.js';
 const now=1700000000000,hour=3600000,end=Math.floor(now/hour)*hour;
 const candles=Array.from({length:40},(_,i)=>({time:end-(40-i)*hour,closeTime:end-(39-i)*hour-1,open:100+i,high:102+i,low:99+i,close:101+i,volume:10,quoteVolume:1000}));
 const book={bids:[['139.9','100']],asks:[['140.1','100']]};
+test('depth estimate accounts for multiple levels and rejects insufficient liquidity',()=>{const b={asks:[['10','1'],['11','2']],bids:[['9','1'],['8','2']]};const buy=estimateDepth(b,'AL',2),sell=estimateDepth(b,'SAT',2);assert.equal(buy.average,10.5);assert.ok(buy.slippage>0);assert.equal(sell.average,8.5);assert.equal(estimateDepth(b,'AL',4).available,false);assert.throws(()=>estimateDepth({asks:[['11','1'],['10','1']]},'AL',1));});
 test('market metrics reject invalid and stale data and expose costs in quote units',()=>{
  const m=analyzeMarket(candles,book,now);assert.ok(m.rsi>50);assert.ok(m.macd>0);assert.ok(m.spread>0);assert.equal(m.volume24,24000);assert.ok(m.estimatedRoundTripCost>m.spread);assert.throws(()=>analyzeMarket(candles,{bids:[['1','1']],asks:[['0.5','1']]},now));assert.throws(()=>analyzeMarket(candles,book,now+4*hour));
 });

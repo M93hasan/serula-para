@@ -2,6 +2,16 @@ const HOUR=3600000;
 const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const ema=(values,period)=>values.slice(1).reduce((acc,n)=>acc+(n-acc)*2/(period+1),values[0]);
 
+// Quote-only estimate; does not submit or prepare any order.
+export function estimateDepth(book,side,quantity){
+  if(!['AL','SAT'].includes(side)||!Number.isFinite(quantity)||quantity<=0)throw Error('invalid depth request');
+  const rows=side==='AL'?book?.asks:book?.bids;if(!Array.isArray(rows)||!rows.length||rows.length>5)throw Error('invalid order book');
+  let remaining=quantity,total=0,previous=side==='AL'?0:Infinity,best;
+  for(const row of rows){const price=Number(row?.[0]),amount=Number(row?.[1]);if(!Number.isFinite(price)||price<=0||!Number.isFinite(amount)||amount<=0||(side==='AL'?price<previous:price>previous))throw Error('invalid order book');if(best===undefined)best=price;previous=price;const filled=Math.min(remaining,amount);total+=filled*price;remaining-=filled;}
+  if(remaining>Math.max(1e-12,quantity*1e-12))return {available:false,reason:'INSUFFICIENT_DEPTH'};
+  const average=total/quantity,slippage=side==='AL'?average/best-1:1-average/best;if(!Number.isFinite(average)||!Number.isFinite(slippage))throw Error('invalid order book');return {available:true,average,slippage:Math.max(0,slippage),notional:total};
+}
+
 export function analyzeMarket(candles,book,now=Date.now()) {
   if(!Array.isArray(candles)||candles.length<35)throw Error('insufficient candles');
   if(candles.some((c,i)=>!Number.isSafeInteger(c.time)||c.closeTime!==c.time+HOUR-1||c.closeTime>=now||![c.open,c.high,c.low,c.close,c.volume,c.quoteVolume].every(Number.isFinite)||c.open<=0||c.close<=0||c.low<=0||c.high<Math.max(c.open,c.close,c.low)||c.low>Math.min(c.open,c.close,c.high)||c.volume<0||c.quoteVolume<0||(i&&c.time!==candles[i-1].time+HOUR)))throw Error('invalid candles');

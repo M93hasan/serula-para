@@ -14,12 +14,16 @@ import { evaluateAIHistory } from './ai-performance.js';
 import { MarketUniverse } from './market-universe.js';
 import { MarketScanner } from './market-scanner.js';
 import { PaperStore } from './paper-store.js';
+import { assessPaperReadiness } from './paper-gate.js';
+import { ollamaStatus } from './ollama-status.js';
+import { scannerPaperMarks } from './paper-marks.js';
 
-export function createServer({ token, simulator, paper = null, account = null, market = new MarketData(), universe = new MarketUniverse(), scanner = new MarketScanner({universe}), ai = new AIAnalyst(), distDir = resolve('dist') }) {
+export function createServer({ token, simulator, paper = null, account = null, market = new MarketData(), universe = new MarketUniverse(), scanner = new MarketScanner({universe}), ai = new AIAnalyst(), distDir = resolve('dist'),riskIntervalMs=5000 }) {
   if (typeof token !== 'string' || Buffer.byteLength(token) < 32) throw new Error('Set a random token of at least 32 bytes');
   const expected = Buffer.from(`Bearer ${token}`);
   let latestMarkets=[];
-  return http.createServer(async (req, res) => {
+  let latestScanDecision=null;
+  const server=http.createServer(async (req, res) => {
     res.setHeader('Cache-Control','no-store'); res.setHeader('X-Content-Type-Options','nosniff');
     res.setHeader('Content-Security-Policy', "default-src 'self'; connect-src 'self'; script-src 'self'; style-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
     const port=String(req.socket.localPort), host=`127.0.0.1:${port}`, origin=`http://${host}`;
@@ -33,7 +37,15 @@ export function createServer({ token, simulator, paper = null, account = null, m
     if(req.method==='GET' && req.url==='/status') return res.end(JSON.stringify(simulator.status()));
     if(req.method==='GET' && req.url==='/api/paper/status') {
       if(!paper)return res.writeHead(503).end('{"error":"paper unavailable"}');
-      try{return res.end(JSON.stringify({status:paper.status(),valuation:paper.value([]),history:paper.history(),notice:'Varsayımsal yerel portföy. Fiyat ve işlem bağlantısı henüz yok.'}));}catch{return res.writeHead(503).end('{"error":"paper unavailable"}');}
+      try{let marks=[];try{marks=await scannerPaperMarks({paper,scanner,universe});}catch{}return res.end(JSON.stringify({status:paper.status(),valuation:paper.value(marks),history:paper.history(),gateHistory:paper.gateHistory(),notice:'Varsayımsal yerel portföy. Sanal işlem bağlantısı henüz yok.'}));}catch{return res.writeHead(503).end('{"error":"paper unavailable"}');}
+    }
+    if(req.method==='GET' && req.url==='/api/ai/health')return res.end(JSON.stringify(await ollamaStatus()));
+    if(req.method==='POST' && req.url==='/api/paper/readiness') {
+      if(req.headers.origin!==origin||req.headers['sec-fetch-site']!=='same-origin'||req.headers['content-type']!=='application/json'||req.headers['x-para-request']!=='1')return res.writeHead(403).end('{"error":"forbidden"}');
+      if(!paper)return res.writeHead(503).end('{"error":"paper unavailable"}');
+      try{let body='',size=0;for await(const c of req){size+=c.length;if(size>256)return res.writeHead(413).end('{"error":"too large"}');body+=c.toString('utf8');}const input=JSON.parse(body);if(!input||Array.isArray(input)||typeof input!=='object'||Object.keys(input).length)throw Error('INVALID');
+        let catalog=null;try{catalog=await universe.discover();}catch{}const result=assessPaperReadiness({paper:paper.status(),decision:latestScanDecision?.decision,candidate:latestScanDecision?.candidate,catalog});paper.recordGate(result);return res.end(JSON.stringify(result));
+      }catch{return res.writeHead(503).end('{"error":"readiness unavailable"}');}
     }
     if(req.method==='POST' && ['/api/paper/start','/api/paper/stop'].includes(req.url)) {
       if(req.headers.origin!==origin||req.headers['sec-fetch-site']!=='same-origin'||req.headers['content-type']!=='application/json'||req.headers['x-para-request']!=='1')return res.writeHead(403).end('{"error":"forbidden"}');
@@ -48,7 +60,7 @@ export function createServer({ token, simulator, paper = null, account = null, m
     }
     if(req.method==='POST' && req.url==='/api/ai/scan-best') {
       if(req.headers.origin!==origin||req.headers['sec-fetch-site']!=='same-origin'||req.headers['content-type']!=='application/json'||req.headers['x-para-request']!=='1')return res.writeHead(403).end('{"error":"forbidden"}');
-      try{const state=scanner.status(),catalog=await universe.discover();const candidate=state.results.filter(x=>x.status==='candidate'&&Date.now()-x.asOf<300000&&catalog.markets.some(m=>m.symbol===x.symbol&&m.type===1)).sort((a,b)=>a.indicators.estimatedRoundTripCost-b.indicators.estimatedRoundTripCost)[0];if(!candidate)return res.writeHead(409).end('{"error":"no fresh candidate"}');const result=await ai.analyze(candidate,{catalogApproved:true});result.startedAt=result.time;result.time=Date.now();simulator.saveAI(result);return res.end(JSON.stringify(result));}catch{return res.writeHead(503).end('{"error":"ai unavailable"}');}
+      try{const state=scanner.status(),catalog=await universe.discover();const candidate=state.results.filter(x=>x.status==='candidate'&&Date.now()-x.asOf<300000&&catalog.markets.some(m=>m.symbol===x.symbol&&m.type===1)).sort((a,b)=>a.indicators.estimatedRoundTripCost-b.indicators.estimatedRoundTripCost)[0];if(!candidate)return res.writeHead(409).end('{"error":"no fresh candidate"}');const result=await ai.analyze(candidate,{catalogApproved:true});result.startedAt=result.time;result.time=Date.now();simulator.saveAI(result);latestScanDecision={decision:result,candidate};return res.end(JSON.stringify(result));}catch{return res.writeHead(503).end('{"error":"ai unavailable"}');}
     }
     if(req.method==='POST' && req.url==='/halt') {try {if(paper)paper.halt();simulator.halt();return res.end(JSON.stringify(simulator.status()));} catch {res.writeHead(503).end('{"error":"storage unavailable"}');return;}}
     if (req.method==='POST' && req.url==='/api/analysis') {
@@ -97,6 +109,8 @@ export function createServer({ token, simulator, paper = null, account = null, m
     }
     res.writeHead(404).end('{"error":"not found"}');
   });
+  if(paper){let monitoring=false;const timer=setInterval(async()=>{if(monitoring)return;monitoring=true;try{if(!paper.status().positions.length)return;let marks=[];try{marks=await scannerPaperMarks({paper,scanner,universe});}catch{}paper.assess(marks);}catch{try{paper.halt();}catch{}}finally{monitoring=false;}},riskIntervalMs);timer.unref();server.on('close',()=>clearInterval(timer));}
+  return server;
 }
 if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
   const sim=new RiskStore(join(homedir(),'.para','simulation.sqlite'),{budget:100000,maxTrade:10000,maxLoss:5000});

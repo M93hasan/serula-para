@@ -11,7 +11,7 @@ export class PaperStore {
     this.db=new DatabaseSync(file);
     try{
       if(file!==':memory:')chmodSync(file,0o600);
-      this.db.exec('PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; CREATE TABLE IF NOT EXISTS paper_config (id INTEGER PRIMARY KEY CHECK(id=1), value TEXT NOT NULL); CREATE TABLE IF NOT EXISTS paper_events (id INTEGER PRIMARY KEY, kind TEXT NOT NULL, payload TEXT NOT NULL); CREATE TABLE IF NOT EXISTS paper_peaks (asset TEXT PRIMARY KEY, equity INTEGER NOT NULL);');
+      this.db.exec('PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; CREATE TABLE IF NOT EXISTS paper_config (id INTEGER PRIMARY KEY CHECK(id=1), value TEXT NOT NULL); CREATE TABLE IF NOT EXISTS paper_events (id INTEGER PRIMARY KEY, kind TEXT NOT NULL, payload TEXT NOT NULL); CREATE TABLE IF NOT EXISTS paper_peaks (asset TEXT PRIMARY KEY, equity INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS paper_gate_audit (id INTEGER PRIMARY KEY, time INTEGER NOT NULL, symbol TEXT, reasons TEXT NOT NULL);');
       // Construct before storing; no arbitrary config/credential properties are persisted.
       this.config={feeBps:config.feeBps,slippageBps:config.slippageBps,quotes:config.quotes.map(q=>({asset:q.asset,budget:q.budget,maxTrade:q.maxTrade,maxExposure:q.maxExposure,maxAsset:q.maxAsset,maxLoss:q.maxLoss}))};new PaperPortfolio(this.config);
       this.#transaction(()=>{const stored=this.db.prepare('SELECT value FROM paper_config WHERE id=1').get();const value=JSON.stringify(this.config);if(stored&&stored.value!==value)throw Error('CONFIG_MISMATCH');if(!stored)this.db.prepare('INSERT INTO paper_config VALUES (1,?)').run(value);this.#replay();this.db.prepare('INSERT INTO paper_events(kind,payload) VALUES (?,?)').run('halt','{}');});
@@ -28,6 +28,8 @@ export class PaperStore {
   }
   status(){return this.#transaction(()=>this.#replay().status());}
   history(){return this.#transaction(()=>this.db.prepare('SELECT id,kind,payload FROM paper_events ORDER BY id DESC LIMIT 100').all().map(row=>({id:row.id,kind:row.kind,...JSON.parse(row.payload)})));}
+  recordGate({at,symbol,reasons}){if(!Number.isSafeInteger(at)||(symbol!==null&&!/^[A-Z0-9]{1,20}_[A-Z0-9]{1,20}$/.test(symbol))||!Array.isArray(reasons)||reasons.length>20||reasons.some(x=>typeof x!=='string'||!/^[A-Z_]{1,80}$/.test(x)))throw Error('INVALID_GATE_RECORD');return this.#transaction(()=>this.db.prepare('INSERT INTO paper_gate_audit(time,symbol,reasons) VALUES (?,?,?)').run(at,symbol,JSON.stringify(reasons)));}
+  gateHistory(){return this.#transaction(()=>this.db.prepare('SELECT id,time,symbol,reasons FROM paper_gate_audit ORDER BY id DESC LIMIT 30').all().map(x=>({...x,reasons:JSON.parse(x.reasons)})));}
   value(prices,now=Date.now()){return this.#transaction(()=>this.#replay().value(prices,now));}
   // Internal-only: the caller must obtain prices from a separately verified source.
   // No HTTP endpoint accepts caller-supplied marks or invokes this method.
