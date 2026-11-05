@@ -1,6 +1,6 @@
 // Read-only Binance TR account observation history. NOT realized trading P&L.
 import { DatabaseSync } from 'node:sqlite';
-import { mkdirSync } from 'node:fs';
+import { mkdirSync, chmodSync } from 'node:fs';
 import { dirname } from 'node:path';
 
 export class AccountSnapshotStore {
@@ -9,6 +9,7 @@ export class AccountSnapshotStore {
     this.#clock=clock;
     if(path!==':memory:')mkdirSync(dirname(path),{recursive:true,mode:0o700});
     this.#db=new DatabaseSync(path);
+    if(path!==':memory:')chmodSync(path,0o600);
     this.#db.exec(`PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL;
       CREATE TABLE IF NOT EXISTS account_observations(
         id INTEGER PRIMARY KEY, observed_at INTEGER NOT NULL,
