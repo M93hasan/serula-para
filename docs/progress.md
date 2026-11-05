@@ -1,0 +1,7 @@
+# PARA ilerleme
+
+- PR #1 üzerine ayrı dal: Node.js 20+ ile Windows/Linux yerel çalışma; varsayılan durdurulmuş simülasyon, bütçe/işlem/kayıp sınırları ve süreç içi olay günlüğü. Ajan arayüzleri sadece HOLD üretir, performans veya canlı strateji iddiası yoktur.
+- Binance TR belgelerine göre yalnızca GET time, symbols ve imzalı account/spot istemcisi; sabit TR adresi, yönlendirme reddi, süre sınırı ve 418/429 bekleme. Özel hesap isteği panele bağlı değil ve gerçek hesapla denenmedi. Gerçek emir veya para çekme kodu yok.
+- Yerel servis sadece 127.0.0.1; 32+ baytlık kullanıcı belirli bearer token, Origin reddi, durum ve durdurma. Tarayıcı paneliyle bağlantı veya uzaktan erişim henüz yok. Kimlik bilgileri kalıcı saklanmaz; yerel sistemin güvenli gizli bilgi kasası entegrasyonu tamamlanmadı.
+- Resmî kaynaklar: https://www.binance.tr/apidocs/ (limitler, HMAC, uç noktalar); https://github.com/binance/binance-skills-hub ; https://github.com/ccxt/ccxt ; https://github.com/ccxt/binance-trade-bot . Skills Hub/CCXT ve bot için Binance TR uyumu kanıtlanmadı; emir yollayabilen kodları eklenmedi. Bot GPL-3.0 lisanslıdır.
+- Eksik: TR canlı read-only uyumluluk ve test ortamı doğrulaması, gerçek piyasa verisi/strateji ve muhasebe, kalıcı atomik risk durumu ve güvenli kasa, çoklu süreç kontrolü, tarayıcı oturumu/CSRF ve TLS üzerinden uzaktan erişim. Yeniden başlatma risk günlüğünü sıfırlar. Bu yapı canlı işlemlere uygun değildir.
