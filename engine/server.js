@@ -36,8 +36,8 @@ export function createServer({ token, simulator, paper = null, account = null, m
         if(result){res.writeHead(result.status,Object.fromEntries(result.headers));res.end(await result.text());return;}
       }catch{res.writeHead(503).end();return;}
     }
-    if(req.method==='GET' && (req.url==='/' || /^\/assets\/[A-Za-z0-9_-]+\.(js|css)$/.test(req.url))) {
-      try {const path=req.url==='/'?'index.html':req.url.slice(1); const data=readFileSync(join(distDir,path)); res.setHeader('Content-Type',path.endsWith('.js')?'text/javascript; charset=utf-8':path.endsWith('.css')?'text/css; charset=utf-8':'text/html; charset=utf-8'); res.end(data);} catch {res.writeHead(404).end();} return;
+    if(req.method==='GET' && (req.url==='/' || /^\/assets\/[A-Za-z0-9_-]+\.(js|css|ttf)$/.test(req.url))) {
+      try {const path=req.url==='/'?'index.html':req.url.slice(1); const data=readFileSync(join(distDir,path)); res.setHeader('Content-Type',path.endsWith('.js')?'text/javascript; charset=utf-8':path.endsWith('.css')?'text/css; charset=utf-8':path.endsWith('.ttf')?'font/ttf':'text/html; charset=utf-8'); res.end(data);} catch {res.writeHead(404).end();} return;
     }
     res.setHeader('Content-Type','application/json');
     const auth=Buffer.from(req.headers.authorization || '');
