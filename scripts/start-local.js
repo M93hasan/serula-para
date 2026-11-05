@@ -35,7 +35,7 @@ try {
   server.listen(8788,'127.0.0.1',()=>{
     console.log('\nPARA yerel panel: http://127.0.0.1:8788');
     console.log(googleAuth.configured?'Google ile giris: etkin (yerel tarayicidan).':'Google ile giris: ayarlanmadi; eski yerel anahtar girisi kullanilir.');
-    console.log(`Yerel erisim anahtari (yedek giris): ${token}`);
+    console.log(`Yerel erisim anahtari (panele girin): ${token}`);
     console.log('Gercek emirler kapali. Durdurmak icin Ctrl+C.\n');
     if(process.platform==='win32'){const browser=spawn('rundll32.exe',['url.dll,FileProtocolHandler','http://127.0.0.1:8788'],{detached:true,stdio:'ignore'});browser.on('error',()=>console.error('Tarayici otomatik acilamadi; yukaridaki adresi elle acin.'));browser.unref();}
   });
