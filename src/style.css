@@ -138,3 +138,19 @@ input:not([type=checkbox]){background:#111;border-radius:2px;border-color:#333;c
  .button-row button{flex:1 1 45%}
 }
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{scroll-behavior:auto!important;animation:none!important;transition:none!important}}
+
+/* Readable system fonts work offline and include Turkish characters. */
+:root{font-family:"Segoe UI",system-ui,-apple-system,sans-serif}
+body{font-size:14px;line-height:1.55}
+button,input,select,textarea{font-family:inherit;font-size:14px}
+.brand small,.aside-foot small,.navlabel,.eyebrow,.status-pill,.badge,
+.terminal-ticker,.cardhead,.card small,.panel-head p,.chart-footer,th,
+.command-launch kbd,.command-heading,.command-result span{font-size:12px;letter-spacing:.03em}
+.nav,.aside-foot strong,.welcome p,.sectionhead p,.panel p,.segmented button,
+table,label{font-size:14px}
+.panel-head h3,.panel h3{font-size:15px;letter-spacing:0}
+@media(max-width:700px){
+ .nav{font-size:14px}
+ .topbar h1{font-size:16px}
+ .terminal-ticker{font-size:12px}
+}
