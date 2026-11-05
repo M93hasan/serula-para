@@ -43,3 +43,5 @@
 - Deneysel paper olayları ayrı SQLite dosyasında atomik kaydedilip tekrar oynatılabilir; yeniden açılışta STOP uygulanır. Quote bazlı varsayımsal değerleme ve taze fiyat yoksa bilinmeyen toplam eklenmiştir. Henüz API/panele bağlı değildir; fiyat kaynağının doğrulanması, gerçekleşmemiş zarar engeli, filtre uygulama, dönüşüm ve AI karar bağlantısı tamamlanmadı.
 
 - Yerel token ve Origin kontrollü paper durum/başlat/durdur API'si ile OpenTerminal durum alanı eklendi; Windows başlatıcısı ayrı paper veritabanını açar. Yalnızca kullanıcı başlatabilir; gerçek emir ve paper işlem yürütme API'si yoktur. Piyasa fiyatı, AI ve paper işlemi bağlantısı, filtre ve zarar kapıları tamamlanmadı; canlı değerleme yapılmaz.
+
+- Deneysel iç risk değerlendirmesi, eksik/eski fiyat veya gerçekleşmemiş toplam zarar/zirveden düşüş sınırında STOP kaydeder. Açık pozisyonla doğrulanmamış yeniden başlatma engellenir; birden fazla quote için doğrulanmış dönüşüm yoksa değerlendirme engellidir. Fiyat kaynağı bu metoda henüz bağlı/doğrulanmış değildir; sanal yürütme API'si kapalı kalır.

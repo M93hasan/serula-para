@@ -15,3 +15,9 @@ test('valuation separates cash, hypothetical cost and missing prices',()=>{
 test('concurrent connections serialize changes and halt on opening another instance',()=>{
  const dir=mkdtempSync(join(tmpdir(),'paper-')),file=join(dir,'paper.sqlite');let a,b;try{a=new PaperStore(file,config);a.start();b=new PaperStore(file,config);assert.equal(a.status().halted,true);a.start();a.execute(order,now);assert.throws(()=>b.execute({...order,id:'two'},now),/RELATED_ASSET/);assert.equal(b.status().positions.length,1);}finally{a?.close();b?.close();rmSync(dir,{recursive:true,force:true});}
 });
+test('missing marks stop the paper ledger and open positions cannot be restarted unverified',()=>{
+ const p=new PaperStore(':memory:',config);try{p.start();p.execute(order,now);const result=p.assess([],now);assert.equal(result.blocked,true);assert.equal(result.quotes[0].status,'PRICE_UNAVAILABLE');assert.equal(p.status().halted,true);assert.throws(()=>p.start(),/OPEN_POSITION_REQUIRES_VERIFIED_MARKS/);}finally{p.close();}
+});
+test('drawdown from a prior observed peak halts even if equity remains above budget',()=>{
+ const p=new PaperStore(':memory:',config);try{p.start();p.execute(order,now);assert.equal(p.assess([{symbol:'BTC_TRY',price:2000,priceTime:now}],now).blocked,false);const result=p.assess([{symbol:'BTC_TRY',price:1300,priceTime:now}],now);assert.equal(result.blocked,true);assert.equal(result.quotes[0].status,'LOSS_LIMIT');assert.ok(result.quotes[0].equity>10000);assert.ok(result.quotes[0].drawdown>=500);assert.equal(p.status().halted,true);}finally{p.close();}
+});

@@ -11,7 +11,7 @@ export class PaperStore {
     this.db=new DatabaseSync(file);
     try{
       if(file!==':memory:')chmodSync(file,0o600);
-      this.db.exec('PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; CREATE TABLE IF NOT EXISTS paper_config (id INTEGER PRIMARY KEY CHECK(id=1), value TEXT NOT NULL); CREATE TABLE IF NOT EXISTS paper_events (id INTEGER PRIMARY KEY, kind TEXT NOT NULL, payload TEXT NOT NULL);');
+      this.db.exec('PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; CREATE TABLE IF NOT EXISTS paper_config (id INTEGER PRIMARY KEY CHECK(id=1), value TEXT NOT NULL); CREATE TABLE IF NOT EXISTS paper_events (id INTEGER PRIMARY KEY, kind TEXT NOT NULL, payload TEXT NOT NULL); CREATE TABLE IF NOT EXISTS paper_peaks (asset TEXT PRIMARY KEY, equity INTEGER NOT NULL);');
       // Construct before storing; no arbitrary config/credential properties are persisted.
       this.config={feeBps:config.feeBps,slippageBps:config.slippageBps,quotes:config.quotes.map(q=>({asset:q.asset,budget:q.budget,maxTrade:q.maxTrade,maxExposure:q.maxExposure,maxAsset:q.maxAsset,maxLoss:q.maxLoss}))};new PaperPortfolio(this.config);
       this.#transaction(()=>{const stored=this.db.prepare('SELECT value FROM paper_config WHERE id=1').get();const value=JSON.stringify(this.config);if(stored&&stored.value!==value)throw Error('CONFIG_MISMATCH');if(!stored)this.db.prepare('INSERT INTO paper_config VALUES (1,?)').run(value);this.#replay();this.db.prepare('INSERT INTO paper_events(kind,payload) VALUES (?,?)').run('halt','{}');});
@@ -20,7 +20,7 @@ export class PaperStore {
   #transaction(fn){this.db.exec('BEGIN IMMEDIATE');try{const result=fn();this.db.exec('COMMIT');return result;}catch(e){this.db.exec('ROLLBACK');throw e;}}
   #replay(){const ledger=new PaperPortfolio(this.config);for(const row of this.db.prepare('SELECT kind,payload FROM paper_events ORDER BY id').all()){const p=JSON.parse(row.payload);if(row.kind==='start')ledger.start();else if(row.kind==='halt')ledger.halt();else if(row.kind==='execute')ledger.execute(p.order,p.now);else throw Error('CORRUPT_PAPER_EVENTS');}return ledger;}
   #write(kind,payload,operation){return this.#transaction(()=>{const ledger=this.#replay(),result=operation(ledger);this.db.prepare('INSERT INTO paper_events(kind,payload) VALUES (?,?)').run(kind,JSON.stringify(payload));return result;});}
-  start(){return this.#write('start',{},p=>p.start());}
+  start(){return this.#write('start',{},p=>{if(p.status().positions.length)throw Error('OPEN_POSITION_REQUIRES_VERIFIED_MARKS');return p.start();});}
   halt(){return this.#write('halt',{},p=>p.halt());}
   execute(input,now=Date.now()){
     const {id,action,symbol,baseAsset,quoteAsset,quantity,price,priceTime}=input||{};const order={id,action,symbol,baseAsset,quoteAsset,quantity,price,priceTime};
@@ -29,5 +29,18 @@ export class PaperStore {
   status(){return this.#transaction(()=>this.#replay().status());}
   history(){return this.#transaction(()=>this.db.prepare('SELECT id,kind,payload FROM paper_events ORDER BY id DESC LIMIT 100').all().map(row=>({id:row.id,kind:row.kind,...JSON.parse(row.payload)})));}
   value(prices,now=Date.now()){return this.#transaction(()=>this.#replay().value(prices,now));}
+  // Internal-only: the caller must obtain prices from a separately verified source.
+  // No HTTP endpoint accepts caller-supplied marks or invokes this method.
+  assess(prices,now=Date.now()){return this.#transaction(()=>{
+    const ledger=this.#replay(),state=ledger.status(),value=ledger.value(prices,now),out=[];let blocked=false;
+    for(const q of value.quotes){const limits=state.quotes.find(x=>x.asset===q.asset),old=this.db.prepare('SELECT equity FROM paper_peaks WHERE asset=?').get(q.asset)?.equity??limits.budget;
+      if(q.equity===null){blocked=true;out.push({asset:q.asset,status:'PRICE_UNAVAILABLE',drawdown:null});continue;}
+      const peak=Math.max(old,q.equity),drawdown=peak-q.equity;this.db.prepare('INSERT INTO paper_peaks(asset,equity) VALUES (?,?) ON CONFLICT(asset) DO UPDATE SET equity=excluded.equity').run(q.asset,peak);
+      const breach=q.lossLimitBreached||drawdown>=limits.maxLoss;blocked||=breach;out.push({asset:q.asset,status:breach?'LOSS_LIMIT':'OK',peak,drawdown,equity:q.equity});
+    }
+    if(value.quotes.length>1){blocked=true;out.push({status:'FX_UNAVAILABLE'});}
+    if(blocked&&!state.halted)this.db.prepare('INSERT INTO paper_events(kind,payload) VALUES (?,?)').run('halt','{}');
+    return {blocked,quotes:out,mode:'paper',notice:'Girdilerin kaynağı henüz doğrulanmadı; bu değerlendirme işlem yetkisi vermez.'};
+  });}
   close(){this.db.close();}
 }
