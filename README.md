@@ -15,3 +15,7 @@ Windows 11 cihazında ve gerçek Binance TR hesabıyla doğrulama henüz yapılm
 ## Piyasa analizi
 
 Yerel panele bağlandıktan sonra **Piyasa analizi ve geçmiş simülasyon** bölümünden örnek bütçe, işlem sınırı, kayıp eşiği ve varsayımsal işlem komisyonunu ayarlayıp analiz başlatın. İsterseniz 5 dakikalık otomatik yenilemeyi açın. Sistem iki TRY çiftinden son 20 kapalı saatin işlem hacmine göre seçim yapar; kural tabanlı AL/SAT/BEKLE ve gösterge gücü üretir. Güç skoru başarı olasılığı değildir. Backtest analiz başlatılmadan seçilmiş tek parite üzerinde geçmiş verilere uygulanır; otomatik seçim geçmiş testi değiştirmez. Listeleme ve hayatta kalma yanlılıkları devam edebilir; tahmini sonuçlar gerçek kazanç veya garanti değildir. Kayıp eşiği, fiyat sıçramalarında aşılabilir. Gerçek emir özelliği yoktur.
+
+### Windows'ta gerçek piyasa kontrolü
+
+PR #4 dalının güncel dosyalarını kullanın. Proje klasöründe PowerShell açın ve `node scripts/check-market.js` çalıştırın. Komut yalnızca herkese açık BTC/TRY ve ETH/TRY son işlemlerini ve kapalı saatlik mum sayısını kontrol eder; API anahtarı veya kasa parolası istemez. Sonrasında `start-para.cmd` ile paneli açıp **Simülasyon → Analiz ve geçmiş test yap** seçin; **Genel Bakış** ekranında BTC/TRY ve ETH/TRY düğmelerini ayrı ayrı deneyin. Fiyat zamanını ve grafiği Binance TR ile karşılaştırın. Hata varsa internet bağlantısını ve Windows saat eşitlemesini kontrol edin. Gerçek emirler kapalıdır; şifreleri ve anahtarları paylaşmayın.

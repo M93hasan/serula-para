@@ -48,3 +48,11 @@ test('historical backtest uses fixed symbol even when later volume changes autom
  try{const origin=`http://127.0.0.1:${server.address().port}`;const headers={Authorization:`Bearer ${token}`,Origin:origin,'Sec-Fetch-Site':'same-origin','Content-Type':'application/json','X-Para-Request':'1'};const res=await fetch(origin+'/api/analysis',{method:'POST',headers,body:JSON.stringify({symbol:'BTC_TRY',budget:1000,maxTrade:100,maxLoss:50,feeRate:.001})});const body=await res.json();assert.equal(body.symbol,'BTC_TRY');assert.equal(body.automaticDecision.symbol,'ETH_TRY');assert.equal(body.backtest.curve.length,candles.length);assert.deepEqual(body.backtest.trades,backtest('BTC_TRY',candles,{budget:1000,maxTrade:100,maxLoss:50,feeRate:.001}).trades);
  }finally{await new Promise(r=>server.close(r));store.close();}
 });
+test('analysis reports safe actionable error codes without disclosing upstream errors',async()=>{
+ const {createServer}=await import('../engine/server.js');const {RiskStore}=await import('../engine/store.js');const store=new RiskStore(':memory:',{budget:1000,maxTrade:100,maxLoss:100}),token='x'.repeat(40);let calls=0;
+ const market={snapshot:async()=>{calls++;throw Error('private upstream failure');}};const server=createServer({token,simulator:store,market});await new Promise(r=>server.listen(0,'127.0.0.1',r));
+ try{const origin=`http://127.0.0.1:${server.address().port}`;const headers={Authorization:`Bearer ${token}`,Origin:origin,'Sec-Fetch-Site':'same-origin','Content-Type':'application/json','X-Para-Request':'1'};
+  const invalid=await fetch(origin+'/api/analysis',{method:'POST',headers,body:JSON.stringify({budget:10,maxTrade:100,maxLoss:1,feeRate:.001})});assert.equal(invalid.status,400);assert.equal((await invalid.json()).error,'INVALID_RISK');assert.equal(calls,0);
+  const failed=await fetch(origin+'/api/analysis',{method:'POST',headers,body:JSON.stringify({budget:1000,maxTrade:100,maxLoss:50,feeRate:.001})});assert.equal(failed.status,503);assert.equal((await failed.json()).error,'MARKET_CONNECTION');
+ }finally{await new Promise(r=>server.close(r));store.close();}
+});
