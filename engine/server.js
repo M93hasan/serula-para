@@ -16,23 +16,40 @@ import { MarketScanner } from './market-scanner.js';
 import { ScanAutomation } from './scan-automation.js';
 import { valuePortfolio } from '../src/portfolio.js';
 import { PaperStore } from './paper-store.js';
+import { createLocalGoogleAuth } from './local-google-auth.js';
 
-export function createServer({ token, simulator, paper = null, account = null, market = new MarketData(), universe = new MarketUniverse(), scanner = new MarketScanner({universe}), ai = new AIAnalyst(), accountHistory = null, autoScan = false, distDir = resolve('dist') }) {
+export function createServer({ token, simulator, paper = null, account = null, market = new MarketData(), universe = new MarketUniverse(), scanner = new MarketScanner({universe}), ai = new AIAnalyst(), accountHistory = null, autoScan = false, googleAuth = null, distDir = resolve('dist') }) {
   if (typeof token !== 'string' || Buffer.byteLength(token) < 32) throw new Error('Set a random token of at least 32 bytes');
   const expected = Buffer.from(`Bearer ${token}`);
+  const localGoogle = googleAuth || createLocalGoogleAuth();
   let latestMarkets=[];
   const scanAutomation = new ScanAutomation(scanner);
   const server = http.createServer(async (req, res) => {
     res.setHeader('Cache-Control','no-store'); res.setHeader('X-Content-Type-Options','nosniff');
     res.setHeader('Content-Security-Policy', "default-src 'self'; connect-src 'self'; script-src 'self'; style-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
     const port=String(req.socket.localPort), host=`127.0.0.1:${port}`, origin=`http://${host}`;
-    if(req.headers.host!==host || (req.headers.origin && req.headers.origin!==origin) || (req.headers['sec-fetch-site'] && !['same-origin','none'].includes(req.headers['sec-fetch-site']))) {res.writeHead(403).end(); return;}
+    const googleCallback=req.method==='GET'&&req.url?.startsWith('/auth/google/callback?');
+    if(req.headers.host!==host || (req.headers.origin && req.headers.origin!==origin) || (req.headers['sec-fetch-site'] && !['same-origin','none',...(googleCallback?['cross-site']:[])].includes(req.headers['sec-fetch-site']))) {res.writeHead(403).end(); return;}
+    if(req.url==='/auth/google/status'||req.url==='/auth/google/start'||req.url==='/auth/google/logout'||req.url?.startsWith('/auth/google/callback?')){
+      try{
+        const result=await localGoogle.handle(new URL(req.url,origin).pathname,new Request(new URL(req.url,origin),{method:req.method,headers:req.headers}));
+        if(result){res.writeHead(result.status,Object.fromEntries(result.headers));res.end(await result.text());return;}
+      }catch{res.writeHead(503).end();return;}
+    }
     if(req.method==='GET' && (req.url==='/' || /^\/assets\/[A-Za-z0-9_-]+\.(js|css)$/.test(req.url))) {
       try {const path=req.url==='/'?'index.html':req.url.slice(1); const data=readFileSync(join(distDir,path)); res.setHeader('Content-Type',path.endsWith('.js')?'text/javascript; charset=utf-8':path.endsWith('.css')?'text/css; charset=utf-8':'text/html; charset=utf-8'); res.end(data);} catch {res.writeHead(404).end();} return;
     }
     res.setHeader('Content-Type','application/json');
     const auth=Buffer.from(req.headers.authorization || '');
-    if(auth.length!==expected.length || !timingSafeEqual(auth,expected)) {res.writeHead(403).end('{"error":"forbidden"}');return;}
+    const bearerValid=auth.length===expected.length&&timingSafeEqual(auth,expected);
+    const googleSession=localGoogle.user(req.headers.cookie||'');
+    if(!bearerValid&&!googleSession) {res.writeHead(403).end('{"error":"forbidden"}');return;}
+    if(req.method==='GET'&&req.url==='/api/auth/me')return res.end(JSON.stringify({authenticated:true,provider:googleSession?'google':'local-token'}));
+    // Cookie sessions may never bypass the same-origin check on any mutation.
+    if(!bearerValid&&googleSession&&req.method!=='GET'&&req.method!=='HEAD'&&
+      (req.headers.origin!==origin||req.headers['sec-fetch-site']!=='same-origin'||req.headers['content-type']!=='application/json'||req.headers['x-para-request']!=='1')){
+      return res.writeHead(403).end('{"error":"forbidden"}');
+    }
     if(req.method==='GET' && req.url==='/status') return res.end(JSON.stringify(simulator.status()));
     if(req.method==='GET' && req.url==='/api/paper/status') {
       if(!paper)return res.writeHead(503).end('{"error":"paper unavailable"}');
@@ -132,7 +149,7 @@ export function createServer({ token, simulator, paper = null, account = null, m
     }
     res.writeHead(404).end('{"error":"not found"}');
   });
-  server.on('close',()=>scanAutomation.close());
+  server.on('close',()=>{scanAutomation.close();localGoogle.close();});
   if(autoScan)server.once('listening',()=>{
     try{scanAutomation.setEnabled(true);}catch{/* fail closed */ }
   });
