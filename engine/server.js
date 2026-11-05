@@ -58,8 +58,13 @@ export function createServer({ token, simulator, paper = null, account = null, m
         const config=JSON.parse(data);if(!config||typeof config!=='object'||Array.isArray(config))throw Error('Invalid configuration');
         // Validate the configuration before any external request.
         backtest('TEST',[],config);
-        const symbol=config.symbol; if(symbol!==undefined && !['BTC_TRY','ETH_TRY'].includes(symbol))throw Error('Invalid symbol');
-        const snapshot=await market.snapshot();const auto=selectMarket(snapshot.markets);const selected=snapshot.markets.find(m=>m.symbol===(symbol||'BTC_TRY')); if(!selected)throw Error('Market unavailable');
+        const symbol=config.symbol;
+        if(symbol!==undefined&&(typeof symbol!=='string'||!/^[A-Z0-9]{1,20}_[A-Z0-9]{1,20}$/.test(symbol)))throw Error('Invalid symbol');
+        // A non-default pair is checked against the fresh exchange catalogue by MarketData.
+        const snapshot=await market.snapshot(symbol?{symbol}:undefined);
+        const selected=snapshot.markets.find(m=>m.symbol===(symbol||'BTC_TRY'));
+        if(!selected)throw Error('Market unavailable');
+        const auto=selectMarket(snapshot.markets);
         const signal=decide(selected.symbol,selected.candles);const result=backtest(selected.symbol,selected.candles,config);latestMarkets=snapshot.markets;
         return res.end(JSON.stringify({asOf:snapshot.asOf,symbol:selected.symbol,price:selected.price,priceTime:selected.priceTime,decision:signal,automaticDecision:decide(auto.symbol,auto.candles),markets:snapshot.markets.map(m=>({symbol:m.symbol,price:m.price,priceTime:m.priceTime,candles:m.candles})),backtest:result,candleCount:selected.candles.length}));
       } catch (err) {const errors={'Invalid risk configuration':'INVALID_RISK','Invalid symbol':'INVALID_SYMBOL','Clock invalid':'CLOCK_INVALID','Market cooldown':'RATE_LIMIT','Market region restricted':'REGION_RESTRICTED','Market request in progress or cooldown':'RATE_LIMIT','Incomplete or stale candles':'STALE_DATA','Stale price':'STALE_DATA','Market unavailable':'MARKET_UNAVAILABLE'};const code=errors[err.message]||'MARKET_CONNECTION';return res.writeHead(code==='INVALID_RISK'||code==='INVALID_SYMBOL'?400:503).end(JSON.stringify({error:code}));}
@@ -69,9 +74,13 @@ export function createServer({ token, simulator, paper = null, account = null, m
     if(req.method==='POST' && req.url==='/api/ai/analyze') {
       if(req.headers.origin!==origin || req.headers['sec-fetch-site']!=='same-origin' || req.headers['content-type']!=='application/json' || req.headers['x-para-request']!=='1')return res.writeHead(403).end('{"error":"forbidden"}');
       try{let body='',size=0;for await(const c of req){size+=c.length;if(size>1024)return res.writeHead(413).end('{"error":"too large"}');body+=c.toString('utf8');}const input=JSON.parse(body);
-        if(!input || !['BTC_TRY','ETH_TRY'].includes(input.symbol) || Object.keys(input).length!==1)throw Error('invalid');
-        const snapshot=latestMarkets.find(m=>m.symbol===input.symbol)||{symbol:input.symbol};
-        const result=await ai.analyze(snapshot);result.startedAt=result.time;result.time=Date.now();simulator.saveAI(result);return res.end(JSON.stringify(result));
+        if(!input||typeof input.symbol!=='string'||!/^[A-Z0-9]{1,20}_[A-Z0-9]{1,20}$/.test(input.symbol)||Object.keys(input).length!==1)throw Error('invalid');
+        const snapshot=latestMarkets.find(m=>m.symbol===input.symbol);
+        if(!snapshot)throw Error('No verified cached market snapshot');
+        const catalog=await universe.discover();
+        const approved=catalog.markets.some(m=>m.symbol===input.symbol&&m.type===1);
+        if(!approved)throw Error('Unsupported or disabled symbol');
+        const result=await ai.analyze(snapshot,{catalogApproved:true});result.startedAt=result.time;result.time=Date.now();simulator.saveAI(result);return res.end(JSON.stringify(result));
       }catch{return res.writeHead(503).end('{"error":"ai unavailable"}');}
     }
     if (account && req.method==='GET' && req.url==='/api/binance-tr/settings') return res.end(JSON.stringify({configured:account.exists()}));

@@ -16,7 +16,7 @@ export class MarketData {
     if(response.status===418||response.status===429){const n=Number(response.headers.get('retry-after'));this.#blocked=this.#clock()+(Number.isFinite(n)&&n>0?n*1000:60000);throw Error('Market cooldown');}
     if(!response.ok)throw Error('Market request failed');return normalizeResponse(await response.json());
   }
-  async snapshot(){
+  async snapshot({symbol:requestedSymbol}={}){
     if(this.#running || this.#clock()<this.#nextSnapshot)throw Error('Market request in progress or cooldown');this.#running=true;this.#nextSnapshot=this.#clock()+30000;
     try {
       const nowResult=await this.#exchange.time();const now=nowResult.timestamp;const reference=this.#clock();
@@ -24,8 +24,13 @@ export class MarketData {
       const currentTime=()=>now+Math.max(0,this.#clock()-reference);
       const all=await this.#exchange.symbols();const list=all?.data?.list;if(!Array.isArray(list))throw Error('Symbols invalid');
       const selected=[];
-      for(const symbol of SYMBOLS){
-        if(!list.some(x=>x.symbol===symbol&&x.type===1&&x.spotTradingEnable===1))continue;
+      // A requested market is only accepted from the fresh exchange catalogue.
+      // The default two-TRY view is retained for legacy overview compatibility.
+      const symbols=requestedSymbol?[requestedSymbol]:SYMBOLS;
+      if(requestedSymbol&&(typeof requestedSymbol!=='string'||!/^[A-Z0-9]{1,20}_[A-Z0-9]{1,20}$/.test(requestedSymbol)))throw Error('Invalid symbol');
+      for(const symbol of symbols){
+        const eligible=list.some(x=>x.symbol===symbol&&x.type===1&&x.spotTradingEnable===1&&(x.status===undefined||x.status==='TRADING'));
+        if(!eligible){if(requestedSymbol)throw Error('Invalid symbol');continue;}
         const ticker=symbol.replace('_','');const q=new URLSearchParams({symbol:ticker,interval:'1h',limit:'250'});
         const raw=await this.#get('/api/v1/klines',q);
         const candles=raw.map(row=>{
