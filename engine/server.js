@@ -11,8 +11,9 @@ import { decide, selectMarket } from './decision.js';
 import { backtest } from './backtest.js';
 import { AIAnalyst } from './ai-analyst.js';
 import { evaluateAIHistory } from './ai-performance.js';
+import { MarketUniverse } from './market-universe.js';
 
-export function createServer({ token, simulator, account = null, market = new MarketData(), ai = new AIAnalyst(), distDir = resolve('dist') }) {
+export function createServer({ token, simulator, account = null, market = new MarketData(), universe = new MarketUniverse(), ai = new AIAnalyst(), distDir = resolve('dist') }) {
   if (typeof token !== 'string' || Buffer.byteLength(token) < 32) throw new Error('Set a random token of at least 32 bytes');
   const expected = Buffer.from(`Bearer ${token}`);
   let latestMarkets=[];
@@ -28,6 +29,7 @@ export function createServer({ token, simulator, account = null, market = new Ma
     const auth=Buffer.from(req.headers.authorization || '');
     if(auth.length!==expected.length || !timingSafeEqual(auth,expected)) {res.writeHead(403).end('{"error":"forbidden"}');return;}
     if(req.method==='GET' && req.url==='/status') return res.end(JSON.stringify(simulator.status()));
+    if(req.method==='GET' && req.url==='/api/markets/universe') {try{return res.end(JSON.stringify(await universe.discover()));}catch{return res.writeHead(503).end('{"error":"market catalogue unavailable"}');}}
     if(req.method==='POST' && req.url==='/halt') {try {simulator.halt();return res.end(JSON.stringify(simulator.status()));} catch {res.writeHead(503).end('{"error":"storage unavailable"}');return;}}
     if (req.method==='POST' && req.url==='/api/analysis') {
       if(req.headers.origin!==origin || req.headers['sec-fetch-site']!=='same-origin' || req.headers['content-type']!=='application/json' || req.headers['x-para-request']!=='1') {res.writeHead(403).end('{"error":"forbidden"}');return;}

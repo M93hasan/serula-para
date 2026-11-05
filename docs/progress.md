@@ -33,3 +33,5 @@
 - Ollama rol çıktıları JSON şemasıyla istenir ve katı doğrulanır; model adı ve kullanılan piyasa zaman bilgisi karar kaydına eklenir. Windows için iki pariteli sentetik `scripts/check-ollama.js` eklendi. Bu ortamda Ollama/LangGraph yok; gerçek model ve Windows testi yapılamadı. Haber ve risk girdileri eksik olduğu için BEKLE kuralı sürer; TradingAgents ve AI performans ölçümü entegre değildir.
 
 - AI kararları analiz bitiş zamanı ile kaydedilir. AI geçmişinden, yalnızca karar sonrasında açılan ve kapanan saatlik mumla tek dönemlik varsayımsal gözlem sunulur; komisyon/kayma varsayımları ayrıdır, BEKLE ve pozisyonu bilinmeyen SAT için kâr hesaplanmaz. Bu henüz tam portföy backtesti veya ölçülmüş başarı oranı değildir. Önce piyasa analizi yenilenmelidir; yalnızca bellekteki sınırlı mumlar kullanılır.
+
+- Binance TR belgelenmiş sembol kataloğundan sabit liste kullanmadan etkin spot parite keşfi eklendi; farklı baz/kotasyonlar ayrı listelenir. Bu yalnızca keşiftir: çoklu parite verisi, likidite ve AI taraması henüz uygulanmadı. Gerçek katalog bu ağdan HTTP 451 nedeniyle doğrulanamadı.
