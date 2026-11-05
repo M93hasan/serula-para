@@ -16,15 +16,18 @@ import { MarketScanner } from './market-scanner.js';
 import { ScanAutomation } from './scan-automation.js';
 import { valuePortfolio } from '../src/portfolio.js';
 import { PaperStore } from './paper-store.js';
+import { AIProviderVault } from './ai-provider-vault.js';
+import { CloudAIService } from './cloud-ai-service.js';
 import { assessPaperReadiness } from './paper-gate.js';
 import { ollamaStatus } from './ollama-status.js';
 import { scannerPaperMarks } from './paper-marks.js';
 
-export function createServer({ token, simulator, paper = null, account = null, market = new MarketData(), universe = new MarketUniverse(), scanner = new MarketScanner({universe}), ai = new AIAnalyst(), accountHistory = null, autoScan = false, distDir = resolve('dist'),riskIntervalMs=5000 }) {
+export function createServer({ token, simulator, paper = null, account = null, aiProviders = null, market = new MarketData(), universe = new MarketUniverse(), scanner = new MarketScanner({universe}), ai = new AIAnalyst(), accountHistory = null, autoScan = false, distDir = resolve('dist'),riskIntervalMs=5000 }) {
   if (typeof token !== 'string' || Buffer.byteLength(token) < 32) throw new Error('Set a random token of at least 32 bytes');
   const expected = Buffer.from(`Bearer ${token}`);
   let latestMarkets=[];
   let latestScanDecision=null;
+  const cloudAI=aiProviders?new CloudAIService({vault:aiProviders}):null;
   const scanAutomation = new ScanAutomation(scanner);
   const server=http.createServer(async (req, res) => {
     res.setHeader('Cache-Control','no-store'); res.setHeader('X-Content-Type-Options','nosniff');
@@ -38,6 +41,30 @@ export function createServer({ token, simulator, paper = null, account = null, m
     const auth=Buffer.from(req.headers.authorization || '');
     if(auth.length!==expected.length || !timingSafeEqual(auth,expected)) {res.writeHead(403).end('{"error":"forbidden"}');return;}
     if(req.method==='GET' && req.url==='/status') return res.end(JSON.stringify(simulator.status()));
+    if(req.method==='POST' && req.url==='/api/ai/providers/analyze') {
+      if(req.headers.origin!==origin||req.headers['sec-fetch-site']!=='same-origin'||req.headers['content-type']!=='application/json'||req.headers['x-para-request']!=='1')return res.writeHead(403).end('{"error":"forbidden"}');
+      if(!cloudAI)return res.writeHead(503).end('{"error":"provider unavailable"}');
+      try{let body='',size=0;for await(const c of req){size+=c.length;if(size>2048)return res.writeHead(413).end('{"error":"too large"}');body+=c.toString('utf8');}
+        const input=JSON.parse(body);if(!input||typeof input!=='object'||Array.isArray(input)||Object.keys(input).some(k=>!['provider','passphrase','symbol','consent'].includes(k))||input.consent!==true||typeof input.symbol!=='string'||!/^[A-Z0-9]{1,20}_[A-Z0-9]{1,20}$/.test(input.symbol))throw Error('INVALID');
+        const snapshot=latestMarkets.find(m=>m.symbol===input.symbol);if(!snapshot)throw Error('NO_MARKET');
+        const catalog=await universe.discover();if(!catalog.markets.some(m=>m.symbol===input.symbol&&m.type===1))throw Error('UNVERIFIED');
+        const result=await cloudAI.analyze({provider:input.provider,passphrase:input.passphrase,snapshot});result.startedAt=result.time;result.time=Date.now();simulator.saveAI(result);return res.end(JSON.stringify(result));
+      }catch{return res.writeHead(400).end('{"error":"provider analysis unavailable"}');}
+    }
+    if(req.method==='GET' && req.url==='/api/ai/providers') {
+      if(!aiProviders)return res.writeHead(503).end('{"error":"providers unavailable"}');
+      try{return res.end(JSON.stringify({providers:aiProviders.status()}));}catch{return res.writeHead(503).end('{"error":"providers unavailable"}');}
+    }
+    if(req.method==='POST' && ['/api/ai/providers/save','/api/ai/providers/delete'].includes(req.url)) {
+      if(req.headers.origin!==origin||req.headers['sec-fetch-site']!=='same-origin'||req.headers['content-type']!=='application/json'||req.headers['x-para-request']!=='1')return res.writeHead(403).end('{"error":"forbidden"}');
+      if(!aiProviders)return res.writeHead(503).end('{"error":"providers unavailable"}');
+      try{let body='',size=0;for await(const c of req){size+=c.length;if(size>8192)return res.writeHead(413).end('{"error":"too large"}');body+=c.toString('utf8');}
+        const input=JSON.parse(body);if(!input||typeof input!=='object'||Array.isArray(input))throw Error('INVALID');
+        const allowed=req.url.endsWith('/save')?['provider','apiKey','model','passphrase','replace']:['provider','passphrase'];if(Object.keys(input).some(x=>!allowed.includes(x)))throw Error('INVALID');
+        if(req.url.endsWith('/save'))aiProviders.save(input);else aiProviders.remove(input);
+        return res.end('{"ok":true}');
+      }catch{return res.writeHead(400).end('{"error":"provider operation failed"}');}
+    }
     if(req.method==='GET' && req.url==='/api/paper/status') {
       if(!paper)return res.writeHead(503).end('{"error":"paper unavailable"}');
       try{let marks=[];try{marks=await scannerPaperMarks({paper,scanner,universe});}catch{}return res.end(JSON.stringify({status:paper.status(),valuation:paper.value(marks),history:paper.history(),gateHistory:paper.gateHistory(),notice:'Varsayımsal yerel portföy. Sanal işlem bağlantısı henüz yok.'}));}catch{return res.writeHead(503).end('{"error":"paper unavailable"}');}
@@ -152,5 +179,5 @@ export function createServer({ token, simulator, paper = null, account = null, m
 if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
   const sim=new RiskStore(join(homedir(),'.para','simulation.sqlite'),{budget:100000,maxTrade:10000,maxLoss:5000});
   const paper=new PaperStore(join(homedir(),'.para','paper.sqlite'),{feeBps:10,slippageBps:10,quotes:[{asset:'TRY',budget:100000,maxTrade:10000,maxExposure:50000,maxAsset:10000,maxLoss:5000}]});
-  createServer({token:process.env.PARA_LOCAL_TOKEN,simulator:sim,paper,account:new AccountService({path:join(homedir(),'.para','binance-tr.vault')})}).listen(8788,'127.0.0.1',()=>console.log('PARA: http://127.0.0.1:8788 (simulation only)'));
+  createServer({token:process.env.PARA_LOCAL_TOKEN,simulator:sim,paper,aiProviders:new AIProviderVault({directory:join(homedir(),'.para','ai-providers')}),account:new AccountService({path:join(homedir(),'.para','binance-tr.vault')})}).listen(8788,'127.0.0.1',()=>console.log('PARA: http://127.0.0.1:8788 (simulation only)'));
 }
