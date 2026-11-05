@@ -10,6 +10,7 @@ import { MarketData } from './market-data.js';
 import { decide, selectMarket } from './decision.js';
 import { backtest } from './backtest.js';
 import { AIAnalyst } from './ai-analyst.js';
+import { evaluateAIHistory } from './ai-performance.js';
 
 export function createServer({ token, simulator, account = null, market = new MarketData(), ai = new AIAnalyst(), distDir = resolve('dist') }) {
   if (typeof token !== 'string' || Buffer.byteLength(token) < 32) throw new Error('Set a random token of at least 32 bytes');
@@ -42,12 +43,13 @@ export function createServer({ token, simulator, account = null, market = new Ma
       } catch (err) {const errors={'Invalid risk configuration':'INVALID_RISK','Invalid symbol':'INVALID_SYMBOL','Clock invalid':'CLOCK_INVALID','Market cooldown':'RATE_LIMIT','Market region restricted':'REGION_RESTRICTED','Market request in progress or cooldown':'RATE_LIMIT','Incomplete or stale candles':'STALE_DATA','Stale price':'STALE_DATA','Market unavailable':'MARKET_UNAVAILABLE'};const code=errors[err.message]||'MARKET_CONNECTION';return res.writeHead(code==='INVALID_RISK'||code==='INVALID_SYMBOL'?400:503).end(JSON.stringify({error:code}));}
     }
     if(req.method==='GET' && req.url==='/api/ai/history') {try{return res.end(JSON.stringify({history:simulator.aiHistory()}));}catch{return res.writeHead(503).end('{"error":"history unavailable"}');}}
+    if(req.method==='GET' && req.url==='/api/ai/performance') {try{return res.end(JSON.stringify(evaluateAIHistory(simulator.aiHistory(),latestMarkets)));}catch{return res.writeHead(503).end('{"error":"performance unavailable"}');}}
     if(req.method==='POST' && req.url==='/api/ai/analyze') {
       if(req.headers.origin!==origin || req.headers['sec-fetch-site']!=='same-origin' || req.headers['content-type']!=='application/json' || req.headers['x-para-request']!=='1')return res.writeHead(403).end('{"error":"forbidden"}');
       try{let body='',size=0;for await(const c of req){size+=c.length;if(size>1024)return res.writeHead(413).end('{"error":"too large"}');body+=c.toString('utf8');}const input=JSON.parse(body);
         if(!input || !['BTC_TRY','ETH_TRY'].includes(input.symbol) || Object.keys(input).length!==1)throw Error('invalid');
         const snapshot=latestMarkets.find(m=>m.symbol===input.symbol)||{symbol:input.symbol};
-        const result=await ai.analyze(snapshot);simulator.saveAI(result);return res.end(JSON.stringify(result));
+        const result=await ai.analyze(snapshot);result.startedAt=result.time;result.time=Date.now();simulator.saveAI(result);return res.end(JSON.stringify(result));
       }catch{return res.writeHead(503).end('{"error":"ai unavailable"}');}
     }
     if (account && req.method==='GET' && req.url==='/api/binance-tr/settings') return res.end(JSON.stringify({configured:account.exists()}));

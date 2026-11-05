@@ -31,3 +31,5 @@
 - TradingAgents karşılaştırması ve deneysel yerel Ollama rol uyarlaması eklendi: beş model rolü, haber eksikliği uyarısı, BEKLE güvenlik kuralı ve yerel AI geçmişi. Orijinal Python/LangGraph paketi henüz entegre edilmedi; doğrulanmış haber kaynağı, AI backtest, risk/bütçe girdisi ve bulut sağlayıcıları eksik. Gerçek emirler kapalıdır.
 
 - Ollama rol çıktıları JSON şemasıyla istenir ve katı doğrulanır; model adı ve kullanılan piyasa zaman bilgisi karar kaydına eklenir. Windows için iki pariteli sentetik `scripts/check-ollama.js` eklendi. Bu ortamda Ollama/LangGraph yok; gerçek model ve Windows testi yapılamadı. Haber ve risk girdileri eksik olduğu için BEKLE kuralı sürer; TradingAgents ve AI performans ölçümü entegre değildir.
+
+- AI kararları analiz bitiş zamanı ile kaydedilir. AI geçmişinden, yalnızca karar sonrasında açılan ve kapanan saatlik mumla tek dönemlik varsayımsal gözlem sunulur; komisyon/kayma varsayımları ayrıdır, BEKLE ve pozisyonu bilinmeyen SAT için kâr hesaplanmaz. Bu henüz tam portföy backtesti veya ölçülmüş başarı oranı değildir. Önce piyasa analizi yenilenmelidir; yalnızca bellekteki sınırlı mumlar kullanılır.
