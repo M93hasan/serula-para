@@ -13,13 +13,16 @@ import { AIAnalyst } from './ai-analyst.js';
 import { evaluateAIHistory } from './ai-performance.js';
 import { MarketUniverse } from './market-universe.js';
 import { MarketScanner } from './market-scanner.js';
+import { ScanAutomation } from './scan-automation.js';
+import { valuePortfolio } from '../src/portfolio.js';
 import { PaperStore } from './paper-store.js';
 
-export function createServer({ token, simulator, paper = null, account = null, market = new MarketData(), universe = new MarketUniverse(), scanner = new MarketScanner({universe}), ai = new AIAnalyst(), distDir = resolve('dist') }) {
+export function createServer({ token, simulator, paper = null, account = null, market = new MarketData(), universe = new MarketUniverse(), scanner = new MarketScanner({universe}), ai = new AIAnalyst(), accountHistory = null, autoScan = false, distDir = resolve('dist') }) {
   if (typeof token !== 'string' || Buffer.byteLength(token) < 32) throw new Error('Set a random token of at least 32 bytes');
   const expected = Buffer.from(`Bearer ${token}`);
   let latestMarkets=[];
-  return http.createServer(async (req, res) => {
+  const scanAutomation = new ScanAutomation(scanner);
+  const server = http.createServer(async (req, res) => {
     res.setHeader('Cache-Control','no-store'); res.setHeader('X-Content-Type-Options','nosniff');
     res.setHeader('Content-Security-Policy', "default-src 'self'; connect-src 'self'; script-src 'self'; style-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
     const port=String(req.socket.localPort), host=`127.0.0.1:${port}`, origin=`http://${host}`;
@@ -41,6 +44,17 @@ export function createServer({ token, simulator, paper = null, account = null, m
       try{if(req.url.endsWith('/start'))paper.start();else paper.halt();return res.end(JSON.stringify({status:paper.status()}));}catch{return res.writeHead(503).end('{"error":"paper unavailable"}');}
     }
     if(req.method==='GET' && req.url==='/api/markets/universe') {try{return res.end(JSON.stringify(await universe.discover()));}catch{return res.writeHead(503).end('{"error":"market catalogue unavailable"}');}}
+    if(req.method==='GET' && req.url==='/api/markets/scan/auto')return res.end(JSON.stringify(scanAutomation.status()));
+    if(req.method==='POST' && req.url==='/api/markets/scan/auto') {
+      if(req.headers.origin!==origin||req.headers['sec-fetch-site']!=='same-origin'||req.headers['content-type']!=='application/json'||req.headers['x-para-request']!=='1')return res.writeHead(403).end('{"error":"forbidden"}');
+      try{
+        let body='',size=0;for await(const c of req){size+=c.length;if(size>256)return res.writeHead(413).end('{"error":"too large"}');body+=c.toString('utf8');}
+        const payload=JSON.parse(body);
+        if(!payload||typeof payload!=='object'||Array.isArray(payload)||typeof payload.enabled!=='boolean'||Object.keys(payload).length!==1)return res.writeHead(400).end('{"error":"invalid"}');
+        scanAutomation.setEnabled(payload.enabled);
+        return res.end(JSON.stringify(scanAutomation.status()));
+      }catch{return res.writeHead(503).end('{"error":"automation unavailable"}');}
+    }
     if(req.method==='GET' && req.url==='/api/markets/scan') {const state=scanner.status();return res.end(JSON.stringify({...state,results:state.results.map(({candles,...item})=>item)}));}
     if(req.method==='POST' && req.url==='/api/markets/scan') {
       if(req.headers.origin!==origin||req.headers['sec-fetch-site']!=='same-origin'||req.headers['content-type']!=='application/json'||req.headers['x-para-request']!=='1')return res.writeHead(403).end('{"error":"forbidden"}');
@@ -83,6 +97,10 @@ export function createServer({ token, simulator, paper = null, account = null, m
         const result=await ai.analyze(snapshot,{catalogApproved:true});result.startedAt=result.time;result.time=Date.now();simulator.saveAI(result);return res.end(JSON.stringify(result));
       }catch{return res.writeHead(503).end('{"error":"ai unavailable"}');}
     }
+    if (req.method==='GET' && req.url==='/api/binance-tr/value-history') {
+      if(!accountHistory)return res.writeHead(503).end('{"error":"history unavailable"}');
+      try{return res.end(JSON.stringify(accountHistory.history()));}catch{return res.writeHead(503).end('{"error":"history unavailable"}');}
+    }
     if (account && req.method==='GET' && req.url==='/api/binance-tr/settings') return res.end(JSON.stringify({configured:account.exists()}));
     if (account && req.method==='POST' && ['/api/binance-tr/save','/api/binance-tr/test','/api/binance-tr/delete'].includes(req.url)) {
       if(req.headers.origin!==origin || req.headers['sec-fetch-site']!=='same-origin' || req.headers['content-type']!=='application/json' || req.headers['x-para-request']!=='1') {res.writeHead(403).end('{"error":"forbidden"}');return;}
@@ -92,11 +110,33 @@ export function createServer({ token, simulator, paper = null, account = null, m
         const input=JSON.parse(data); if(!input||typeof input!=='object'||Array.isArray(input)) throw Error('Invalid input');
         if(req.url.endsWith('/save')) {account.save(input);return res.end('{"ok":true}');}
         if(req.url.endsWith('/delete')) {account.remove(input.passphrase);return res.end('{"ok":true}');}
-        const balances=await account.balance(input.passphrase);return res.end(JSON.stringify({connected:true,balances}));
+        const balances=await account.balance(input.passphrase);
+        // All valuations require fresh observed TRY prices; a partial scan is never a total.
+        // Store no credentials, passphrases or exchange order methods.
+        let valueHistory=null;
+        if(accountHistory){
+          try{
+            const now=Date.now();
+            const scannerPrices=scanner.status().results.filter(x=>x.priceTime&&x.symbol?.endsWith('_TRY'));
+            const v=valuePortfolio(balances,[...latestMarkets,...scannerPrices],now);
+            valueHistory=accountHistory.save({
+              estimatedTry:v.complete?v.subtotal:null,
+              missingAssets:v.missing,
+              pricedAssets:v.pricedCount,
+              assetCount:balances.filter(a=>Number(a.free)>0||Number(a.locked)>0).length
+            });
+          }catch{/* Never block the verified read-only account balance response. */}
+        }
+        return res.end(JSON.stringify({connected:true,balances,valueHistory}));
       } catch (err) {const allowed=['VAULT_UNLOCK_FAILED','EXCHANGE_READ_FAILED'];const code=allowed.includes(err.message)?err.message:'operation failed';if(!res.headersSent) res.writeHead(400).end(JSON.stringify({error:code}));return;}
     }
     res.writeHead(404).end('{"error":"not found"}');
   });
+  server.on('close',()=>scanAutomation.close());
+  if(autoScan)server.once('listening',()=>{
+    try{scanAutomation.setEnabled(true);}catch{/* fail closed */ }
+  });
+  return server;
 }
 if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
   const sim=new RiskStore(join(homedir(),'.para','simulation.sqlite'),{budget:100000,maxTrade:10000,maxLoss:5000});
