@@ -11,3 +11,7 @@
 Kasa ve simülasyon dosyaları `%USERPROFILE%\.para` klasöründedir. Parolanızı unutursanız kasa açılamaz. **Sil**, yalnızca yerel kasayı siler; Binance TR hesabındaki anahtarı ayrıca iptal etmelisiniz. API anahtarlarını sohbet veya GitHub'a göndermeyin. Geliştirme, testler ve Linux için [kurulum notlarına](docs/setup.md) bakın.
 
 Windows 11 cihazında ve gerçek Binance TR hesabıyla doğrulama henüz yapılmadı; uzak erişime veya canlıya açmayın.
+
+## Piyasa analizi
+
+Yerel panele bağlandıktan sonra **Piyasa analizi ve geçmiş simülasyon** bölümünden örnek bütçe, işlem sınırı, kayıp eşiği ve varsayımsal işlem komisyonunu ayarlayıp analiz başlatın. İsterseniz 5 dakikalık otomatik yenilemeyi açın. Sistem iki TRY çiftinden son 20 kapalı saatin işlem hacmine göre seçim yapar; kural tabanlı AL/SAT/BEKLE ve gösterge gücü üretir. Güç skoru başarı olasılığı değildir. Backtest tek seçilmiş varlık üzerinde geçmiş verilere uygulanır; seçim yanlılığı vardır, tahmini sonuçlar gerçek kazanç veya garanti değildir. Kayıp eşiği, fiyat sıçramalarında aşılabilir. Gerçek emir özelliği yoktur.

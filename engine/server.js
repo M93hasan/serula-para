@@ -6,8 +6,11 @@ import { homedir } from 'node:os';
 import { timingSafeEqual } from 'node:crypto';
 import { RiskStore } from './store.js';
 import { AccountService } from './account-service.js';
+import { MarketData } from './market-data.js';
+import { decide, selectMarket } from './decision.js';
+import { backtest } from './backtest.js';
 
-export function createServer({ token, simulator, account = null, distDir = resolve('dist') }) {
+export function createServer({ token, simulator, account = null, market = new MarketData(), distDir = resolve('dist') }) {
   if (typeof token !== 'string' || Buffer.byteLength(token) < 32) throw new Error('Set a random token of at least 32 bytes');
   const expected = Buffer.from(`Bearer ${token}`);
   return http.createServer(async (req, res) => {
@@ -23,6 +26,18 @@ export function createServer({ token, simulator, account = null, distDir = resol
     if(auth.length!==expected.length || !timingSafeEqual(auth,expected)) {res.writeHead(403).end('{"error":"forbidden"}');return;}
     if(req.method==='GET' && req.url==='/status') return res.end(JSON.stringify(simulator.status()));
     if(req.method==='POST' && req.url==='/halt') {try {simulator.halt();return res.end(JSON.stringify(simulator.status()));} catch {res.writeHead(503).end('{"error":"storage unavailable"}');return;}}
+    if (req.method==='POST' && req.url==='/api/analysis') {
+      if(req.headers.origin!==origin || req.headers['sec-fetch-site']!=='same-origin' || req.headers['content-type']!=='application/json' || req.headers['x-para-request']!=='1') {res.writeHead(403).end('{"error":"forbidden"}');return;}
+      try {
+        let data='',size=0;for await(const chunk of req){size+=chunk.length;if(size>2048){res.writeHead(413).end('{"error":"too large"}');return;}data+=chunk.toString('utf8');}
+        const config=JSON.parse(data);if(!config||typeof config!=='object'||Array.isArray(config))throw Error('Invalid configuration');
+        // Validate the configuration before any external request.
+        backtest('TEST',[],config);
+        const snapshot=await market.snapshot();const selected=selectMarket(snapshot.markets);const signal=decide(selected.symbol,selected.candles);
+        const result=backtest(selected.symbol,selected.candles,config);
+        return res.end(JSON.stringify({asOf:snapshot.asOf,symbol:selected.symbol,price:selected.price,priceTime:selected.priceTime,decision:signal,backtest:result,candleCount:selected.candles.length}));
+      } catch {return res.writeHead(503).end('{"error":"analysis unavailable"}');}
+    }
     if (account && req.method==='GET' && req.url==='/api/binance-tr/settings') return res.end(JSON.stringify({configured:account.exists()}));
     if (account && req.method==='POST' && ['/api/binance-tr/save','/api/binance-tr/test','/api/binance-tr/delete'].includes(req.url)) {
       if(req.headers.origin!==origin || req.headers['sec-fetch-site']!=='same-origin' || req.headers['content-type']!=='application/json' || req.headers['x-para-request']!=='1') {res.writeHead(403).end('{"error":"forbidden"}');return;}
