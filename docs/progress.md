@@ -45,3 +45,5 @@
 - Yerel token ve Origin kontrollü paper durum/başlat/durdur API'si ile OpenTerminal durum alanı eklendi; Windows başlatıcısı ayrı paper veritabanını açar. Yalnızca kullanıcı başlatabilir; gerçek emir ve paper işlem yürütme API'si yoktur. Piyasa fiyatı, AI ve paper işlemi bağlantısı, filtre ve zarar kapıları tamamlanmadı; canlı değerleme yapılmaz.
 
 - Deneysel iç risk değerlendirmesi, eksik/eski fiyat veya gerçekleşmemiş toplam zarar/zirveden düşüş sınırında STOP kaydeder. Açık pozisyonla doğrulanmamış yeniden başlatma engellenir; birden fazla quote için doğrulanmış dönüşüm yoksa değerlendirme engellidir. Fiyat kaynağı bu metoda henüz bağlı/doğrulanmış değildir; sanal yürütme API'si kapalı kalır.
+
+- Yerel AI adayı ve simülasyon durumuna dayalı salt BEKLE hazırlık kontrolü, ayrı SQLite gerekçe günlüğü ve yerel Ollama model listesi sağlık kontrolü eklendi. Kontrol sanal işlem yürütmez; haber, sürekli risk ve yürütme kapısı hâlâ kapalıdır. Gerçek model, haber, TradingAgents, tüm piyasa türleri ve canlı borsa doğrulanmadı.
