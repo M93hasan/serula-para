@@ -14,7 +14,7 @@ export class MarketUniverse {
       for(const item of list){
         if(!item||typeof item.symbol!=='string'||typeof item.baseAsset!=='string'||typeof item.quoteAsset!=='string'||!/^([A-Z0-9]{1,20})_([A-Z0-9]{1,20})$/.test(item.symbol)||item.symbol!==`${item.baseAsset}_${item.quoteAsset}`||seen.has(item.symbol))throw Error('Invalid symbol catalogue');
         seen.add(item.symbol);
-        if(item.spotTradingEnable!==1){ineligible++;continue;}
+        if(item.spotTradingEnable!==1||(item.status!==undefined&&item.status!=='TRADING')){ineligible++;continue;}
         markets.push({symbol:item.symbol,baseAsset:item.baseAsset,quoteAsset:item.quoteAsset,type:item.type,analysisStatus:'NOT_SCANNED'});
       }
       return this.#cache={receivedAt:this.#clock(),exchangeTime:payload.timestamp,listed:list.length,eligible:markets.length,ineligible,markets,notice:'Yalnızca parite listesi; piyasa taraması ve fırsat tespiti henüz uygulanmadı.'};

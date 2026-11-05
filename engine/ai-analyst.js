@@ -4,11 +4,11 @@ const finite=n=>typeof n==='number'&&Number.isFinite(n);
 export class AIAnalyst {
   #fetch;#model;#clock;#busy=false;
   constructor({fetchImpl=fetch,model=process.env.PARA_OLLAMA_MODEL||'',clock=Date.now}={}){this.#fetch=fetchImpl;this.#model=model;this.#clock=clock;}
-  async analyze(input){
+  async analyze(input,{catalogApproved=false}={}){
     if(this.#busy)throw Error('AI_BUSY');this.#busy=true;
     const now=this.#clock(), safe={symbol:input?.symbol,time:now,action:'BEKLE',risk:'BELİRSİZ',reason:'Analiz için taze piyasa verisi ve doğrulanmış haber gereklidir.',roles:[],source:'Binance TR halka açık piyasa verisi',model:this.#model || 'ayarlanmamış',provider:'Ollama (yerel)',newsVerified:false};
     try{
-      if(!['BTC_TRY','ETH_TRY'].includes(input?.symbol)||!finite(input?.price)||input.price<=0||!Number.isSafeInteger(input.priceTime)||now-input.priceTime>300000||input.priceTime>now+5000||!Array.isArray(input.candles)||input.candles.length<20)return {...safe,reason:'Piyasa verisi eksik veya güncel değil.'};
+      if((!['BTC_TRY','ETH_TRY'].includes(input?.symbol)&&!(catalogApproved&&/^[A-Z0-9]{1,20}_[A-Z0-9]{1,20}$/.test(input?.symbol)))||!finite(input?.price)||input.price<=0||!Number.isSafeInteger(input.priceTime)||now-input.priceTime>300000||input.priceTime>now+5000||!Array.isArray(input.candles)||input.candles.length<20)return {...safe,reason:'Piyasa verisi eksik veya güncel değil.'};
       const candles=input.candles.slice(-20).map(c=>({time:c.time,closeTime:c.closeTime,open:c.open,high:c.high,low:c.low,close:c.close,volume:c.volume}));
       if(candles.some((c,i)=>!Number.isSafeInteger(c.time)||!Number.isSafeInteger(c.closeTime)||c.closeTime>=now||![c.open,c.high,c.low,c.close,c.volume].every(finite)||c.close<=0||c.open<=0||c.high<Math.max(c.open,c.close,c.low)||c.low>Math.min(c.open,c.close,c.high)||c.low<=0||c.volume<0||c.closeTime!==c.time+3600000-1||(i&&c.time!==candles[i-1].time+3600000)))return {...safe,reason:'Mum verisi eksik, geçersiz veya kapanmamış.'};
       if(now-candles.at(-1).closeTime>7200000)return {...safe,reason:'Son kapanmış mum eski; güvenli sonuç BEKLE.'};

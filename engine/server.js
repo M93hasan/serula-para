@@ -12,8 +12,9 @@ import { backtest } from './backtest.js';
 import { AIAnalyst } from './ai-analyst.js';
 import { evaluateAIHistory } from './ai-performance.js';
 import { MarketUniverse } from './market-universe.js';
+import { MarketScanner } from './market-scanner.js';
 
-export function createServer({ token, simulator, account = null, market = new MarketData(), universe = new MarketUniverse(), ai = new AIAnalyst(), distDir = resolve('dist') }) {
+export function createServer({ token, simulator, account = null, market = new MarketData(), universe = new MarketUniverse(), scanner = new MarketScanner({universe}), ai = new AIAnalyst(), distDir = resolve('dist') }) {
   if (typeof token !== 'string' || Buffer.byteLength(token) < 32) throw new Error('Set a random token of at least 32 bytes');
   const expected = Buffer.from(`Bearer ${token}`);
   let latestMarkets=[];
@@ -30,6 +31,15 @@ export function createServer({ token, simulator, account = null, market = new Ma
     if(auth.length!==expected.length || !timingSafeEqual(auth,expected)) {res.writeHead(403).end('{"error":"forbidden"}');return;}
     if(req.method==='GET' && req.url==='/status') return res.end(JSON.stringify(simulator.status()));
     if(req.method==='GET' && req.url==='/api/markets/universe') {try{return res.end(JSON.stringify(await universe.discover()));}catch{return res.writeHead(503).end('{"error":"market catalogue unavailable"}');}}
+    if(req.method==='GET' && req.url==='/api/markets/scan') {const state=scanner.status();return res.end(JSON.stringify({...state,results:state.results.map(({candles,...item})=>item)}));}
+    if(req.method==='POST' && req.url==='/api/markets/scan') {
+      if(req.headers.origin!==origin||req.headers['sec-fetch-site']!=='same-origin'||req.headers['content-type']!=='application/json'||req.headers['x-para-request']!=='1')return res.writeHead(403).end('{"error":"forbidden"}');
+      try{scanner.start();return res.writeHead(202).end('{"status":"running"}');}catch{return res.writeHead(429).end('{"error":"scan busy or cooldown"}');}
+    }
+    if(req.method==='POST' && req.url==='/api/ai/scan-best') {
+      if(req.headers.origin!==origin||req.headers['sec-fetch-site']!=='same-origin'||req.headers['content-type']!=='application/json'||req.headers['x-para-request']!=='1')return res.writeHead(403).end('{"error":"forbidden"}');
+      try{const state=scanner.status(),catalog=await universe.discover();const candidate=state.results.filter(x=>x.status==='candidate'&&Date.now()-x.asOf<300000&&catalog.markets.some(m=>m.symbol===x.symbol&&m.type===1)).sort((a,b)=>a.indicators.estimatedRoundTripCost-b.indicators.estimatedRoundTripCost)[0];if(!candidate)return res.writeHead(409).end('{"error":"no fresh candidate"}');const result=await ai.analyze(candidate,{catalogApproved:true});result.startedAt=result.time;result.time=Date.now();simulator.saveAI(result);return res.end(JSON.stringify(result));}catch{return res.writeHead(503).end('{"error":"ai unavailable"}');}
+    }
     if(req.method==='POST' && req.url==='/halt') {try {simulator.halt();return res.end(JSON.stringify(simulator.status()));} catch {res.writeHead(503).end('{"error":"storage unavailable"}');return;}}
     if (req.method==='POST' && req.url==='/api/analysis') {
       if(req.headers.origin!==origin || req.headers['sec-fetch-site']!=='same-origin' || req.headers['content-type']!=='application/json' || req.headers['x-para-request']!=='1') {res.writeHead(403).end('{"error":"forbidden"}');return;}
