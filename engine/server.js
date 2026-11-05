@@ -61,7 +61,7 @@ export function createServer({ token, simulator, paper = null, account = null, m
         const symbol=config.symbol;
         if(symbol!==undefined&&(typeof symbol!=='string'||!/^[A-Z0-9]{1,20}_[A-Z0-9]{1,20}$/.test(symbol)))throw Error('Invalid symbol');
         // A non-default pair is checked against the fresh exchange catalogue by MarketData.
-        const snapshot=await market.snapshot(symbol?{symbol}:undefined);
+        const snapshot=await market.snapshot(symbol&&!['BTC_TRY','ETH_TRY'].includes(symbol)?{symbol}:undefined);
         const selected=snapshot.markets.find(m=>m.symbol===(symbol||'BTC_TRY'));
         if(!selected)throw Error('Market unavailable');
         const auto=selectMarket(snapshot.markets);
