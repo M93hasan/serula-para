@@ -12,7 +12,7 @@ test('trend decision is deterministic and confidence is signal strength',()=>{
 });
 test('backtest uses next open, charges fees, honors trade cap and rejects invalid limits',()=>{
  const cs=Array.from({length:50},(_,i)=>candle(i,100+i));const r=backtest('BTC_TRY',cs,{budget:1000,maxTrade:100,maxLoss:200,feeRate:.01});
- assert.ok(r.trades.length);assert.equal(r.trades[0].signalTime,cs[19].closeTime);assert.equal(r.trades[0].time,cs[20].time);assert.equal(r.trades[0].fee,1);assert.ok(r.trades[0].notional<=100);assert.ok(r.equity<1000+50);
+ assert.ok(r.trades.length);assert.equal(r.trades[0].signalTime,cs[19].closeTime);assert.equal(r.trades[0].time,cs[20].time);assert.ok(Math.abs(r.trades[0].fee-r.trades[0].notional*.01)<1e-10);assert.ok(r.trades[0].notional+r.trades[0].fee<=100+1e-9);assert.ok(r.equity<1000+50);
  assert.throws(()=>backtest('BTC_TRY',cs,{budget:100,maxTrade:101,maxLoss:20,feeRate:0}));
 });
 test('future prices do not alter earlier decisions or executed trades',()=>{
@@ -55,4 +55,18 @@ test('analysis reports safe actionable error codes without disclosing upstream e
   const invalid=await fetch(origin+'/api/analysis',{method:'POST',headers,body:JSON.stringify({budget:10,maxTrade:100,maxLoss:1,feeRate:.001})});assert.equal(invalid.status,400);assert.equal((await invalid.json()).error,'INVALID_RISK');assert.equal(calls,0);
   const failed=await fetch(origin+'/api/analysis',{method:'POST',headers,body:JSON.stringify({budget:1000,maxTrade:100,maxLoss:50,feeRate:.001})});assert.equal(failed.status,503);assert.equal((await failed.json()).error,'MARKET_CONNECTION');
  }finally{await new Promise(r=>server.close(r));store.close();}
+});
+test('fresh trades arriving after network delay use elapsed time; future and stale trades fail',async()=>{
+ const start=base+31*H+1000;let clock=start;
+ const all=Array.from({length:31},(_,i)=>[base+i*H,'100','101','99','100','5',base+(i+1)*H-1,'500']);
+ const exchange={time:async()=>({timestamp:start}),symbols:async()=>({data:{list:[{type:1,symbol:'BTC_TRY',spotTradingEnable:1}]}})};
+ const make=(timeOffset)=>new MarketData({clock:()=>clock,exchange,fetchImpl:async url=>{clock+=3000;return new Response(JSON.stringify(url.includes('klines')?all:[{price:'100',time:clock+timeOffset}]));}});
+ let r=await make(-500).snapshot();assert.equal(r.markets[0].priceTime,start+5500);assert.equal(r.asOf,start+6000);
+ clock=start;await assert.rejects(make(5000).snapshot(),/Stale price/);
+ clock=start;await assert.rejects(make(-301000).snapshot(),/Stale price/);
+});
+test('regional restriction is identified even when response code is zero',async()=>{
+ const now=base+31*H+1000;const exchange={time:async()=>({timestamp:now}),symbols:async()=>({data:{list:[{type:1,symbol:'BTC_TRY',spotTradingEnable:1}]}})};
+ const market=new MarketData({clock:()=>now,exchange,fetchImpl:async()=>new Response(JSON.stringify({code:0,msg:'Service unavailable from a restricted location'}))});
+ await assert.rejects(market.snapshot(),/Market region restricted/);
 });
