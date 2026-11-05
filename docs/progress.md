@@ -47,3 +47,5 @@
 - Deneysel iç risk değerlendirmesi, eksik/eski fiyat veya gerçekleşmemiş toplam zarar/zirveden düşüş sınırında STOP kaydeder. Açık pozisyonla doğrulanmamış yeniden başlatma engellenir; birden fazla quote için doğrulanmış dönüşüm yoksa değerlendirme engellidir. Fiyat kaynağı bu metoda henüz bağlı/doğrulanmış değildir; sanal yürütme API'si kapalı kalır.
 
 - Yerel AI adayı ve simülasyon durumuna dayalı salt BEKLE hazırlık kontrolü, ayrı SQLite gerekçe günlüğü ve yerel Ollama model listesi sağlık kontrolü eklendi. Kontrol sanal işlem yürütmez; haber, sürekli risk ve yürütme kapısı hâlâ kapalıdır. Gerçek model, haber, TradingAgents, tüm piyasa türleri ve canlı borsa doğrulanmadı.
+
+- Yerel sunucuda açık TRY simülasyon pozisyonları için tarayıcıdan taze tip-1 son işlem verisiyle sınırlı değerleme/periodik risk kontrolü eklendi; veri veya katalog yoksa STOP. Diğer quote'lar dönüştürülmez ve eksik fiyat sayılır. Bu akış sentetik testlidir; gerçek Binance TR verisiyle veya Windows'ta doğrulanmadı. Paper emir API'si kapalıdır.

@@ -16,13 +16,14 @@ import { MarketScanner } from './market-scanner.js';
 import { PaperStore } from './paper-store.js';
 import { assessPaperReadiness } from './paper-gate.js';
 import { ollamaStatus } from './ollama-status.js';
+import { scannerPaperMarks } from './paper-marks.js';
 
-export function createServer({ token, simulator, paper = null, account = null, market = new MarketData(), universe = new MarketUniverse(), scanner = new MarketScanner({universe}), ai = new AIAnalyst(), distDir = resolve('dist') }) {
+export function createServer({ token, simulator, paper = null, account = null, market = new MarketData(), universe = new MarketUniverse(), scanner = new MarketScanner({universe}), ai = new AIAnalyst(), distDir = resolve('dist'),riskIntervalMs=5000 }) {
   if (typeof token !== 'string' || Buffer.byteLength(token) < 32) throw new Error('Set a random token of at least 32 bytes');
   const expected = Buffer.from(`Bearer ${token}`);
   let latestMarkets=[];
   let latestScanDecision=null;
-  return http.createServer(async (req, res) => {
+  const server=http.createServer(async (req, res) => {
     res.setHeader('Cache-Control','no-store'); res.setHeader('X-Content-Type-Options','nosniff');
     res.setHeader('Content-Security-Policy', "default-src 'self'; connect-src 'self'; script-src 'self'; style-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
     const port=String(req.socket.localPort), host=`127.0.0.1:${port}`, origin=`http://${host}`;
@@ -36,7 +37,7 @@ export function createServer({ token, simulator, paper = null, account = null, m
     if(req.method==='GET' && req.url==='/status') return res.end(JSON.stringify(simulator.status()));
     if(req.method==='GET' && req.url==='/api/paper/status') {
       if(!paper)return res.writeHead(503).end('{"error":"paper unavailable"}');
-      try{return res.end(JSON.stringify({status:paper.status(),valuation:paper.value([]),history:paper.history(),gateHistory:paper.gateHistory(),notice:'Varsayımsal yerel portföy. Fiyat ve işlem bağlantısı henüz yok.'}));}catch{return res.writeHead(503).end('{"error":"paper unavailable"}');}
+      try{let marks=[];try{marks=await scannerPaperMarks({paper,scanner,universe});}catch{}return res.end(JSON.stringify({status:paper.status(),valuation:paper.value(marks),history:paper.history(),gateHistory:paper.gateHistory(),notice:'Varsayımsal yerel portföy. Sanal işlem bağlantısı henüz yok.'}));}catch{return res.writeHead(503).end('{"error":"paper unavailable"}');}
     }
     if(req.method==='GET' && req.url==='/api/ai/health')return res.end(JSON.stringify(await ollamaStatus()));
     if(req.method==='POST' && req.url==='/api/paper/readiness') {
@@ -99,6 +100,8 @@ export function createServer({ token, simulator, paper = null, account = null, m
     }
     res.writeHead(404).end('{"error":"not found"}');
   });
+  if(paper){let monitoring=false;const timer=setInterval(async()=>{if(monitoring)return;monitoring=true;try{if(!paper.status().positions.length)return;let marks=[];try{marks=await scannerPaperMarks({paper,scanner,universe});}catch{}paper.assess(marks);}catch{try{paper.halt();}catch{}}finally{monitoring=false;}},riskIntervalMs);timer.unref();server.on('close',()=>clearInterval(timer));}
+  return server;
 }
 if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
   const sim=new RiskStore(join(homedir(),'.para','simulation.sqlite'),{budget:100000,maxTrade:10000,maxLoss:5000});
