@@ -27,3 +27,5 @@
 - Piyasa saat kontrolü istek süresini hesaba katacak şekilde düzeltildi; bölgesel kısıtlama ayrı gösterilir. Backtest alışında işlem limiti komisyon dahil aşılmaz. Maksimum kayıp eşiği uygulaması yalnızca geçmiş simülasyondur; fiyat boşluklarında eşik aşılabilir. 27 test ve derleme geçti. Yeni değişiklik Windows 11 üzerinde denenmedi.
 
 - Entegrasyon dalı PR #5 OpenTerminal düzeni ve PR #6 teknik düzeltmelerini birleştirir. Kullanıcı Windows'ta gerçek BTC/TRY ve ETH/TRY mum grafiklerinin çalıştığını bildirdi; bu, entegre sürümün ayrı bir Windows testi değildir. Entegre sürümde 27 test ve derleme başarılı; masaüstünde komut menüsü, grafik/odak ve eksik fiyat alt toplamı, mobil boyutta komut menüsü sentetik verilerle denendi. Gerçek emirler kapalıdır.
+
+- TradingAgents karşılaştırması ve deneysel yerel Ollama rol uyarlaması eklendi: beş model rolü, haber eksikliği uyarısı, BEKLE güvenlik kuralı ve yerel AI geçmişi. Orijinal Python/LangGraph paketi henüz entegre edilmedi; doğrulanmış haber kaynağı, AI backtest, risk/bütçe girdisi ve bulut sağlayıcıları eksik. Gerçek emirler kapalıdır.

@@ -7,6 +7,7 @@ export class RiskStore {
     if (file !== ':memory:') mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
     this.db = new DatabaseSync(file);
     this.db.exec('PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; CREATE TABLE IF NOT EXISTS state (id INTEGER PRIMARY KEY CHECK(id=1), budget INTEGER NOT NULL, max_trade INTEGER NOT NULL, max_loss INTEGER NOT NULL, remaining INTEGER NOT NULL, halted INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS events (id INTEGER PRIMARY KEY, time TEXT NOT NULL, type TEXT NOT NULL, amount INTEGER, loss INTEGER, remaining INTEGER NOT NULL);');
+    this.db.exec('CREATE TABLE IF NOT EXISTS ai_history (id INTEGER PRIMARY KEY, time INTEGER NOT NULL, symbol TEXT NOT NULL, result TEXT NOT NULL);');
     const {budget, maxTrade, maxLoss} = limits;
     if (![budget,maxTrade,maxLoss].every(x=>Number.isSafeInteger(x) && x>0) || maxTrade>budget || maxLoss>budget) throw new Error('Invalid limits');
     this.db.prepare('INSERT OR IGNORE INTO state VALUES (1,?,?,?,?,1)').run(budget,maxTrade,maxLoss,budget);
@@ -27,5 +28,7 @@ export class RiskStore {
     if(amount>s.maxTrade||amount>s.budgetRemaining||s.budget-s.budgetRemaining+worstCaseLoss>=s.maxLoss) throw Error('Risk limit');
     const remaining=s.budgetRemaining-worstCaseLoss; this.db.prepare('UPDATE state SET remaining=? WHERE id=1').run(remaining); this.#event('simulated',amount,worstCaseLoss,remaining); return {event:'simulated',amount,worstCaseLoss,remaining};
   }); }
+  saveAI(result){this.db.prepare('INSERT INTO ai_history(time,symbol,result) VALUES(?,?,?)').run(result.time,result.symbol,JSON.stringify(result));}
+  aiHistory(){return this.db.prepare('SELECT result FROM ai_history ORDER BY id DESC LIMIT 30').all().map(x=>JSON.parse(x.result));}
   close(){this.db.close();}
 }
