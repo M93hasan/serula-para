@@ -41,3 +41,5 @@
 - Deneysel bellek içi kâğıt portföy çekirdeği eklendi: ayrı quote bütçeleri, tek işlem/varlık/toplam açık pozisyon limitleri, ücret/kayma, gerçekleşmiş zarar eşiği, durdurma ve yinelenen kimlik kontrolü. Borsaya bağlanmaz; sunucu/arayüze bağlı veya kalıcı değildir. Gerçekleşmemiş zarar, katalog filtreleri, fiyat kaynak doğrulaması, kur dönüşümü, kalıcı işlem ve kapsamlı risk yönetimi eksiktir; kullanıma hazır simülasyon değildir.
 
 - Deneysel paper olayları ayrı SQLite dosyasında atomik kaydedilip tekrar oynatılabilir; yeniden açılışta STOP uygulanır. Quote bazlı varsayımsal değerleme ve taze fiyat yoksa bilinmeyen toplam eklenmiştir. Henüz API/panele bağlı değildir; fiyat kaynağının doğrulanması, gerçekleşmemiş zarar engeli, filtre uygulama, dönüşüm ve AI karar bağlantısı tamamlanmadı.
+
+- Yerel token ve Origin kontrollü paper durum/başlat/durdur API'si ile OpenTerminal durum alanı eklendi; Windows başlatıcısı ayrı paper veritabanını açar. Yalnızca kullanıcı başlatabilir; gerçek emir ve paper işlem yürütme API'si yoktur. Piyasa fiyatı, AI ve paper işlemi bağlantısı, filtre ve zarar kapıları tamamlanmadı; canlı değerleme yapılmaz.

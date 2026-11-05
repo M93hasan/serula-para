@@ -15,17 +15,19 @@ try {
   if(!installed){console.log('Bagimliliklar kuruluyor...');run(['ci']);}
   console.log('Panel hazirlaniyor...');run(['run','build']);
   const {RiskStore}=await import('../engine/store.js');
+  const {PaperStore}=await import('../engine/paper-store.js');
   const {AccountService}=await import('../engine/account-service.js');
   const {createServer}=await import('../engine/server.js');
   const dir=process.env.PARA_DATA_DIR ? resolve(process.env.PARA_DATA_DIR) : join(homedir(),'.para'), token=randomBytes(32).toString('hex');
   const sim=new RiskStore(join(dir,'simulation.sqlite'),{budget:100000,maxTrade:10000,maxLoss:5000});
-  const server=createServer({token,simulator:sim,account:new AccountService({path:join(dir,'binance-tr.vault')})});
-  server.on('error',error=>{console.error(error.code==='EADDRINUSE'?'8788 portu kullanimda. Acik PARA penceresini kapatin.':'Yerel sunucu baslatilamadi.');sim.close();process.exitCode=1;});
+  const paper=new PaperStore(join(dir,'paper.sqlite'),{feeBps:10,slippageBps:10,quotes:[{asset:'TRY',budget:100000,maxTrade:10000,maxExposure:50000,maxAsset:10000,maxLoss:5000}]});
+  const server=createServer({token,simulator:sim,paper,account:new AccountService({path:join(dir,'binance-tr.vault')})});
+  server.on('error',error=>{console.error(error.code==='EADDRINUSE'?'8788 portu kullanimda. Acik PARA penceresini kapatin.':'Yerel sunucu baslatilamadi.');sim.close();paper.close();process.exitCode=1;});
   server.listen(8788,'127.0.0.1',()=>{
     console.log('\nPARA yerel panel: http://127.0.0.1:8788');
     console.log(`Yerel erisim anahtari (panele girin): ${token}`);
     console.log('Gercek emirler kapali. Durdurmak icin Ctrl+C.\n');
     if(process.platform==='win32'){const browser=spawn('rundll32.exe',['url.dll,FileProtocolHandler','http://127.0.0.1:8788'],{detached:true,stdio:'ignore'});browser.on('error',()=>console.error('Tarayici otomatik acilamadi; yukaridaki adresi elle acin.'));browser.unref();}
   });
-  const stop=()=>server.close(()=>{sim.close();process.exit(0);});process.on('SIGINT',stop);process.on('SIGTERM',stop);
+  const stop=()=>server.close(()=>{sim.close();paper.close();process.exit(0);});process.on('SIGINT',stop);process.on('SIGTERM',stop);
 } catch(error){console.error(`Kurulum veya baslatma hatasi: ${error.message}`);process.exitCode=1;}

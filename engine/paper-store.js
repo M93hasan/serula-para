@@ -27,6 +27,7 @@ export class PaperStore {
     return this.#write('execute',{order,now},p=>p.execute(order,now));
   }
   status(){return this.#transaction(()=>this.#replay().status());}
+  history(){return this.#transaction(()=>this.db.prepare('SELECT id,kind,payload FROM paper_events ORDER BY id DESC LIMIT 100').all().map(row=>({id:row.id,kind:row.kind,...JSON.parse(row.payload)})));}
   value(prices,now=Date.now()){return this.#transaction(()=>this.#replay().value(prices,now));}
   close(){this.db.close();}
 }

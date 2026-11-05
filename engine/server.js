@@ -13,8 +13,9 @@ import { AIAnalyst } from './ai-analyst.js';
 import { evaluateAIHistory } from './ai-performance.js';
 import { MarketUniverse } from './market-universe.js';
 import { MarketScanner } from './market-scanner.js';
+import { PaperStore } from './paper-store.js';
 
-export function createServer({ token, simulator, account = null, market = new MarketData(), universe = new MarketUniverse(), scanner = new MarketScanner({universe}), ai = new AIAnalyst(), distDir = resolve('dist') }) {
+export function createServer({ token, simulator, paper = null, account = null, market = new MarketData(), universe = new MarketUniverse(), scanner = new MarketScanner({universe}), ai = new AIAnalyst(), distDir = resolve('dist') }) {
   if (typeof token !== 'string' || Buffer.byteLength(token) < 32) throw new Error('Set a random token of at least 32 bytes');
   const expected = Buffer.from(`Bearer ${token}`);
   let latestMarkets=[];
@@ -30,6 +31,15 @@ export function createServer({ token, simulator, account = null, market = new Ma
     const auth=Buffer.from(req.headers.authorization || '');
     if(auth.length!==expected.length || !timingSafeEqual(auth,expected)) {res.writeHead(403).end('{"error":"forbidden"}');return;}
     if(req.method==='GET' && req.url==='/status') return res.end(JSON.stringify(simulator.status()));
+    if(req.method==='GET' && req.url==='/api/paper/status') {
+      if(!paper)return res.writeHead(503).end('{"error":"paper unavailable"}');
+      try{return res.end(JSON.stringify({status:paper.status(),valuation:paper.value([]),history:paper.history(),notice:'Varsayımsal yerel portföy. Fiyat ve işlem bağlantısı henüz yok.'}));}catch{return res.writeHead(503).end('{"error":"paper unavailable"}');}
+    }
+    if(req.method==='POST' && ['/api/paper/start','/api/paper/stop'].includes(req.url)) {
+      if(req.headers.origin!==origin||req.headers['sec-fetch-site']!=='same-origin'||req.headers['content-type']!=='application/json'||req.headers['x-para-request']!=='1')return res.writeHead(403).end('{"error":"forbidden"}');
+      if(!paper)return res.writeHead(503).end('{"error":"paper unavailable"}');
+      try{if(req.url.endsWith('/start'))paper.start();else paper.halt();return res.end(JSON.stringify({status:paper.status()}));}catch{return res.writeHead(503).end('{"error":"paper unavailable"}');}
+    }
     if(req.method==='GET' && req.url==='/api/markets/universe') {try{return res.end(JSON.stringify(await universe.discover()));}catch{return res.writeHead(503).end('{"error":"market catalogue unavailable"}');}}
     if(req.method==='GET' && req.url==='/api/markets/scan') {const state=scanner.status();return res.end(JSON.stringify({...state,results:state.results.map(({candles,...item})=>item)}));}
     if(req.method==='POST' && req.url==='/api/markets/scan') {
@@ -40,7 +50,7 @@ export function createServer({ token, simulator, account = null, market = new Ma
       if(req.headers.origin!==origin||req.headers['sec-fetch-site']!=='same-origin'||req.headers['content-type']!=='application/json'||req.headers['x-para-request']!=='1')return res.writeHead(403).end('{"error":"forbidden"}');
       try{const state=scanner.status(),catalog=await universe.discover();const candidate=state.results.filter(x=>x.status==='candidate'&&Date.now()-x.asOf<300000&&catalog.markets.some(m=>m.symbol===x.symbol&&m.type===1)).sort((a,b)=>a.indicators.estimatedRoundTripCost-b.indicators.estimatedRoundTripCost)[0];if(!candidate)return res.writeHead(409).end('{"error":"no fresh candidate"}');const result=await ai.analyze(candidate,{catalogApproved:true});result.startedAt=result.time;result.time=Date.now();simulator.saveAI(result);return res.end(JSON.stringify(result));}catch{return res.writeHead(503).end('{"error":"ai unavailable"}');}
     }
-    if(req.method==='POST' && req.url==='/halt') {try {simulator.halt();return res.end(JSON.stringify(simulator.status()));} catch {res.writeHead(503).end('{"error":"storage unavailable"}');return;}}
+    if(req.method==='POST' && req.url==='/halt') {try {if(paper)paper.halt();simulator.halt();return res.end(JSON.stringify(simulator.status()));} catch {res.writeHead(503).end('{"error":"storage unavailable"}');return;}}
     if (req.method==='POST' && req.url==='/api/analysis') {
       if(req.headers.origin!==origin || req.headers['sec-fetch-site']!=='same-origin' || req.headers['content-type']!=='application/json' || req.headers['x-para-request']!=='1') {res.writeHead(403).end('{"error":"forbidden"}');return;}
       try {
@@ -81,5 +91,6 @@ export function createServer({ token, simulator, account = null, market = new Ma
 }
 if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
   const sim=new RiskStore(join(homedir(),'.para','simulation.sqlite'),{budget:100000,maxTrade:10000,maxLoss:5000});
-  createServer({token:process.env.PARA_LOCAL_TOKEN,simulator:sim,account:new AccountService({path:join(homedir(),'.para','binance-tr.vault')})}).listen(8788,'127.0.0.1',()=>console.log('PARA: http://127.0.0.1:8788 (simulation only)'));
+  const paper=new PaperStore(join(homedir(),'.para','paper.sqlite'),{feeBps:10,slippageBps:10,quotes:[{asset:'TRY',budget:100000,maxTrade:10000,maxExposure:50000,maxAsset:10000,maxLoss:5000}]});
+  createServer({token:process.env.PARA_LOCAL_TOKEN,simulator:sim,paper,account:new AccountService({path:join(homedir(),'.para','binance-tr.vault')})}).listen(8788,'127.0.0.1',()=>console.log('PARA: http://127.0.0.1:8788 (simulation only)'));
 }
