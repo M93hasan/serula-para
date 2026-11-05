@@ -1,0 +1,18 @@
+{
+  // PARA Trading preview: Cloudflare Workers + Vite static assets.
+  // Do not bind this worker to a public custom domain until web authentication is implemented.
+  "name": "serula-para",
+  "compatibility_date": "2026-11-05",
+  "compatibility_flags": ["nodejs_compat"],
+  "main": "cloudflare/worker.js",
+  "previews": {
+    "ratelimits": [{ "name": "ANALYSIS_LIMIT", "namespace_id": "1638020471", "simple": { "limit": 3, "period": 60 } }]
+  },
+  "preview_urls": true,
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    "run_worker_first": true,
+    "not_found_handling": "single-page-application"
+  }
+}

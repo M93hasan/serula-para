@@ -1,0 +1,51 @@
+# PARA ilerleme
+
+- PR #1 üzerine PR #3: Binance TR salt okunur time/symbols/account adapteri; gerçek emir/para çekme yok. TR hesap bağlantısı gerçek anahtarla doğrulanmadı. Skills Hub, CCXT ve Binance Trade Bot için TR uyumu kanıtlanmadı; kullanılmadı.
+- Yerel kasa: scrypt + AES-256-GCM; parola ve anahtarlar terminalde gizli girilir, kasa üzerine yazılmaz. Kasa yerel hesap istemcisine ve panele bağlıdır. Windows dosya ACL'leri işletim sistemi kullanıcı hesabına bağlıdır; Windows üzerinde sınanmadı.
+- SQLite işleminde simülasyon risk durumu ve olaylar birlikte kalıcıdır; yeniden açılışta durdurulur. Çoklu bağlantı kontrolleri mevcut; simülasyondur, gerçek emir muhasebesi değildir.
+- 127.0.0.1:8788 aynı kaynak paneli: bellekte tutulan bearer anahtarı, Host/Origin/Fetch Metadata denetimi, CSP, durum ve acil durdurma. İnternete açılmamalı. Oturum yönetimi, uzaktan erişim, parola kurtarma ve güvenli çok kullanıcılı ortam henüz yok.
+- Eksik: Windows gerçek cihaz testi, canlı TR salt okunur uyumluluk, gerçek piyasa verisi/strateji ve muhasebe, otomatik ajan, canlı işlem risk değerlendirmesi, Cloudflare/uzak sunucu kimlik doğrulaması. Gerçek işlemler kapalıdır.
+- Test: Node testleri, derleme ve Host/Origin sınamaları; Linux Chromium masaüstünde sahte hesap verileriyle panel akışı denendi. Mobil ve Windows cihaz testi yapılmadı.
+
+- Binance TR ayarları: yerel panelden şifreli kasa kaydet/değiştir/sil ve parolayla Binance TR signed spot account sorgusu, gerçek varlıkların salt okunur gösterimi. Sentetik verilerle uçtan uca sunucu testi yapıldı; gerçek hesap ve Windows üzerinde doğrulanmadı. Chromium tarayıcıda yerel giriş, sahte API bilgisi kaydı ve örnek bakiye gösterimi doğrulandı. Binance TR tarafında yalnızca okuma izni elle ayarlanmalıdır.
+
+- Windows için start-para.cmd ve yerel başlatıcı eklendi: bağımlılık kontrolü, panel derleme, geçici erişim anahtarı ve tarayıcı açma. Windows 11 cihazında henüz çalıştırılmadı.
+
+- PR #3 karar araştırması: Binance TR belgelerindeki type-1 `api.binance.me` mum ve son işlem uçları, yalnızca `BTC_TRY`/`ETH_TRY`; kapalı saatlik mum, gecikmiş veri ve saat farkı kontrolü. Windows kullanıcısı mevcut hesap bağlantısını doğruladığını bildirdi; piyasa uçlarına gerçek ağ erişimi bu ortamda doğrulanmadı.
+- Kural tabanlı SMA(5/20) AL/SAT/BEKLE, gösterge gücü (başarı olasılığı değil), son 20 mumun TRY hacmiyle seçim. Son 250 saatlik veriyle tek varlıklı backtest; sinyal kapanışta, sanal dolum sonraki açılışta, varsayımsal komisyon ve bütçe/kayıp eşiği. Seçim güncel örneklem üzerinden yapıldığı için geçmiş testte seçim yanlılığı vardır. Kayma, spread, likidite, tam borsa filtreleri, vergiler ve gerçek komisyon otomatik doğrulanmaz. Kayıp eşiği sıçramalarda aşılabilir. Sonuçlar gerçek kazanç değildir.
+- Freqtrade stratejileri/backtest ve Binance Skills Hub değerlendirildi: Binance TR uyumu kanıtlanmadığından ve emir yetenekleri nedeniyle kodları kullanılmadı. https://github.com/freqtrade/freqtrade-strategies ; https://github.com/freqtrade/freqtrade/blob/develop/docs/lookahead-analysis.md ; https://github.com/binance/binance-skills-hub ; https://www.binance.tr/apidocs/ .
+
+- Arayüz dalı: altı menü, yerel API/varlık ekranı, TradingView Lightweight Charts ile mum ve simülasyon eğrileri. Portföy yalnızca tüm sıfır olmayan varlıkların geçerli TRY fiyatı varsa yaklaşık hesaplanır. API hata türleri kasanın açılamaması ve borsa bağlantısı için ayrıldı. Son bağlantı zamanı oturum belleğindedir.
+- Backtest paritesi istekten önce sabit seçilir (varsayılan BTC_TRY); en yüksek güncel hacimle otomatik seçilen sinyal bağımsız gösterilir. Bu değişiklik son veriye göre geçmişe dönük parite seçimi yanlılığını kaldırır; geçmişteki listeleme ve hayatta kalma yanlılıkları için kanıt yoktur.
+- 21 test geçti; masaüstü Chromium sentetik fiyat/hesap verisiyle sınandı. Gerçek piyasa uçları, Windows ve mobil tarayıcı bu ortamda doğrulanmadı.
+
+- Son doğrulama: Binance TR resmi belgeleri type-1 mum/son işlem uçları ve parametrelerle uyumludur; gerçek BTC_TRY mum isteği test tarayıcısının bölgesel kısıtı nedeniyle reddedildi. İki pariteyi gerçek yanıtla doğrulamak için README'deki anahtarsız `node scripts/check-market.js` yönergesini kullanın.
+- Eksik veya eski fiyatlarda tahmini TRY alt toplamı ve fiyatı eksik varlıklar açıkça ayrılır; tam portföy veya BTC karşılığı gösterilmez. Kasa parolası/anahtarlar günlüğe yazılmaz. Piyasa hata kodları kullanıcıya anlaşılır ve gizli bilgi içermeyen mesajlara çevrilir.
+- 410×850 Chromium penceresinde menü, test bağlantısı, API alanları, simülasyon grafiği ve BTC/ETH geçişi sentetik verilerle denendi. Node başlatıcısı Linux'ta otomatik testten geçti; Windows 11 üzerinde yeni sürüm çalıştırılmadı. Gelecek verisi sızıntısı ve sabit parite testleri başarılı; gerçek piyasa yanıtları ve Windows için kullanıcı kontrolü bekleniyor.
+
+- Piyasa doğrulaması: Binance TR belgeleri type-1 mum ve son işlem uçlarını doğruluyor. BTC mum uç noktası test tarayıcısının bulunduğu bölgeden `code: 0` ile birlikte bölgesel kısıtlama mesajı döndürdü; gerçek BTC ve ETH verisi doğrulanamadı. `node scripts/check-market.js` kullanıcı bilgisayarında API anahtarı olmadan iki pariteyi denemek içindir.
+- Piyasa saat kontrolü istek süresini hesaba katacak şekilde düzeltildi; bölgesel kısıtlama ayrı gösterilir. Backtest alışında işlem limiti komisyon dahil aşılmaz. Maksimum kayıp eşiği uygulaması yalnızca geçmiş simülasyondur; fiyat boşluklarında eşik aşılabilir. 27 test ve derleme geçti. Yeni değişiklik Windows 11 üzerinde denenmedi.
+
+- Entegrasyon dalı PR #5 OpenTerminal düzeni ve PR #6 teknik düzeltmelerini birleştirir. Kullanıcı Windows'ta gerçek BTC/TRY ve ETH/TRY mum grafiklerinin çalıştığını bildirdi; bu, entegre sürümün ayrı bir Windows testi değildir. Entegre sürümde 27 test ve derleme başarılı; masaüstünde komut menüsü, grafik/odak ve eksik fiyat alt toplamı, mobil boyutta komut menüsü sentetik verilerle denendi. Gerçek emirler kapalıdır.
+
+- TradingAgents karşılaştırması ve deneysel yerel Ollama rol uyarlaması eklendi: beş model rolü, haber eksikliği uyarısı, BEKLE güvenlik kuralı ve yerel AI geçmişi. Orijinal Python/LangGraph paketi henüz entegre edilmedi; doğrulanmış haber kaynağı, AI backtest, risk/bütçe girdisi ve bulut sağlayıcıları eksik. Gerçek emirler kapalıdır.
+
+- Ollama rol çıktıları JSON şemasıyla istenir ve katı doğrulanır; model adı ve kullanılan piyasa zaman bilgisi karar kaydına eklenir. Windows için iki pariteli sentetik `scripts/check-ollama.js` eklendi. Bu ortamda Ollama/LangGraph yok; gerçek model ve Windows testi yapılamadı. Haber ve risk girdileri eksik olduğu için BEKLE kuralı sürer; TradingAgents ve AI performans ölçümü entegre değildir.
+
+- AI kararları analiz bitiş zamanı ile kaydedilir. AI geçmişinden, yalnızca karar sonrasında açılan ve kapanan saatlik mumla tek dönemlik varsayımsal gözlem sunulur; komisyon/kayma varsayımları ayrıdır, BEKLE ve pozisyonu bilinmeyen SAT için kâr hesaplanmaz. Bu henüz tam portföy backtesti veya ölçülmüş başarı oranı değildir. Önce piyasa analizi yenilenmelidir; yalnızca bellekteki sınırlı mumlar kullanılır.
+
+- Binance TR belgelenmiş sembol kataloğundan sabit liste kullanmadan etkin spot parite keşfi eklendi; farklı baz/kotasyonlar ayrı listelenir. Bu yalnızca keşiftir: çoklu parite verisi, likidite ve AI taraması henüz uygulanmadı. Gerçek katalog bu ağdan HTTP 451 nedeniyle doğrulanamadı.
+
+- Type-1 paritelerde sırayla mum, en iyi alış/satış ve son işlem okuyan deneysel ön tarama eklendi; RSI, EMA, MACD, oynaklık ve varsayımsal maliyet gösterilir. En düşük maliyetli taze aday yalnız katalog yeniden doğrulanarak yerel AI'ye gönderilir; doğrulanmış haber/risk yokken BEKLE sürer. Diğer piyasa türleri, tam derinlik/likidite eşikleri, parite filtreleri, çoklu varlık simülasyon defteri, gerçek TradingAgents ve canlı servis doğrulaması eksiktir. Maliyet ve ön seçim kâr tahmini değildir; katalog ve piyasa uçları canlı doğrulanmadı.
+
+- Deneysel bellek içi kâğıt portföy çekirdeği eklendi: ayrı quote bütçeleri, tek işlem/varlık/toplam açık pozisyon limitleri, ücret/kayma, gerçekleşmiş zarar eşiği, durdurma ve yinelenen kimlik kontrolü. Borsaya bağlanmaz; sunucu/arayüze bağlı veya kalıcı değildir. Gerçekleşmemiş zarar, katalog filtreleri, fiyat kaynak doğrulaması, kur dönüşümü, kalıcı işlem ve kapsamlı risk yönetimi eksiktir; kullanıma hazır simülasyon değildir.
+
+- Deneysel paper olayları ayrı SQLite dosyasında atomik kaydedilip tekrar oynatılabilir; yeniden açılışta STOP uygulanır. Quote bazlı varsayımsal değerleme ve taze fiyat yoksa bilinmeyen toplam eklenmiştir. Henüz API/panele bağlı değildir; fiyat kaynağının doğrulanması, gerçekleşmemiş zarar engeli, filtre uygulama, dönüşüm ve AI karar bağlantısı tamamlanmadı.
+
+- Yerel token ve Origin kontrollü paper durum/başlat/durdur API'si ile OpenTerminal durum alanı eklendi; Windows başlatıcısı ayrı paper veritabanını açar. Yalnızca kullanıcı başlatabilir; gerçek emir ve paper işlem yürütme API'si yoktur. Piyasa fiyatı, AI ve paper işlemi bağlantısı, filtre ve zarar kapıları tamamlanmadı; canlı değerleme yapılmaz.
+
+- Deneysel iç risk değerlendirmesi, eksik/eski fiyat veya gerçekleşmemiş toplam zarar/zirveden düşüş sınırında STOP kaydeder. Açık pozisyonla doğrulanmamış yeniden başlatma engellenir; birden fazla quote için doğrulanmış dönüşüm yoksa değerlendirme engellidir. Fiyat kaynağı bu metoda henüz bağlı/doğrulanmış değildir; sanal yürütme API'si kapalı kalır.
+
+- Yerel AI adayı ve simülasyon durumuna dayalı salt BEKLE hazırlık kontrolü, ayrı SQLite gerekçe günlüğü ve yerel Ollama model listesi sağlık kontrolü eklendi. Kontrol sanal işlem yürütmez; haber, sürekli risk ve yürütme kapısı hâlâ kapalıdır. Gerçek model, haber, TradingAgents, tüm piyasa türleri ve canlı borsa doğrulanmadı.
+
+- Yerel sunucuda açık TRY simülasyon pozisyonları için tarayıcıdan taze tip-1 son işlem verisiyle sınırlı değerleme/periodik risk kontrolü eklendi; veri veya katalog yoksa STOP. Diğer quote'lar dönüştürülmez ve eksik fiyat sayılır. Bu akış sentetik testlidir; gerçek Binance TR verisiyle veya Windows'ta doğrulanmadı. Paper emir API'si kapalıdır.
