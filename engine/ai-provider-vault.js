@@ -6,7 +6,7 @@ import {seal,loadVault} from './vault.js';
 const PROVIDERS=Object.freeze(['openai','ollama_cloud','anthropic','gemini','deepseek']);
 const validPassword=p=>typeof p==='string'&&p.length>=16&&p.length<=512;
 const validKey=k=>typeof k==='string'&&k.length>0&&k.length<=512&&!/[\u0000-\u0020\u007f]/.test(k);
-const validModel=m=>typeof m==='string'&&(m===''||/^[A-Za-z0-9_.:/-]{1,100}$/.test(m));
+const validModel=m=>typeof m==='string'&&(m===''||/^[A-Za-z0-9_.:-]{1,100}$/.test(m));
 // A separate local vault per provider; never stored in the Binance credential vault.
 export class AIProviderVault {
   #dir;#busy=false;

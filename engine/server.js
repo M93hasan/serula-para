@@ -22,12 +22,12 @@ import { assessPaperReadiness } from './paper-gate.js';
 import { ollamaStatus } from './ollama-status.js';
 import { scannerPaperMarks } from './paper-marks.js';
 
-export function createServer({ token, simulator, paper = null, account = null, aiProviders = null, market = new MarketData(), universe = new MarketUniverse(), scanner = new MarketScanner({universe}), ai = new AIAnalyst(), accountHistory = null, autoScan = false, distDir = resolve('dist'),riskIntervalMs=5000 }) {
+export function createServer({ token, simulator, paper = null, account = null, aiProviders = null, cloudAIService = null, market = new MarketData(), universe = new MarketUniverse(), scanner = new MarketScanner({universe}), ai = new AIAnalyst(), accountHistory = null, autoScan = false, distDir = resolve('dist'),riskIntervalMs=5000 }) {
   if (typeof token !== 'string' || Buffer.byteLength(token) < 32) throw new Error('Set a random token of at least 32 bytes');
   const expected = Buffer.from(`Bearer ${token}`);
   let latestMarkets=[];
   let latestScanDecision=null;
-  const cloudAI=aiProviders?new CloudAIService({vault:aiProviders}):null;
+  const cloudAI=cloudAIService||(aiProviders?new CloudAIService({vault:aiProviders}):null);
   const scanAutomation = new ScanAutomation(scanner);
   const server=http.createServer(async (req, res) => {
     res.setHeader('Cache-Control','no-store'); res.setHeader('X-Content-Type-Options','nosniff');
