@@ -2,6 +2,7 @@ import {DatabaseSync} from 'node:sqlite';
 import {mkdirSync,chmodSync} from 'node:fs';
 import {dirname} from 'node:path';
 import {PaperPortfolio} from './paper-portfolio.js';
+import {buildPaperReport} from './paper-report.js';
 
 // A separate local-only database per portfolio. Replays use only fixed, allowlisted fields.
 export class PaperStore {
@@ -31,6 +32,7 @@ export class PaperStore {
   recordGate({at,symbol,reasons}){if(!Number.isSafeInteger(at)||(symbol!==null&&!/^[A-Z0-9]{1,20}_[A-Z0-9]{1,20}$/.test(symbol))||!Array.isArray(reasons)||reasons.length>20||reasons.some(x=>typeof x!=='string'||!/^[A-Z_]{1,80}$/.test(x)))throw Error('INVALID_GATE_RECORD');return this.#transaction(()=>this.db.prepare('INSERT INTO paper_gate_audit(time,symbol,reasons) VALUES (?,?,?)').run(at,symbol,JSON.stringify(reasons)));}
   gateHistory(){return this.#transaction(()=>this.db.prepare('SELECT id,time,symbol,reasons FROM paper_gate_audit ORDER BY id DESC LIMIT 30').all().map(x=>({...x,reasons:JSON.parse(x.reasons)})));}
   value(prices,now=Date.now()){return this.#transaction(()=>this.#replay().value(prices,now));}
+  report(prices,now=Date.now()){return this.#transaction(()=>{const events=this.db.prepare('SELECT kind,payload FROM paper_events ORDER BY id').all().map(row=>({kind:row.kind,...JSON.parse(row.payload)}));return buildPaperReport(this.config,events,prices,now);});}
   // Internal-only: the caller must obtain prices from a separately verified source.
   // No HTTP endpoint accepts caller-supplied marks or invokes this method.
   assess(prices,now=Date.now()){return this.#transaction(()=>{

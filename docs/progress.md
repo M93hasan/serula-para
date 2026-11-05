@@ -49,3 +49,5 @@
 - Yerel AI adayı ve simülasyon durumuna dayalı salt BEKLE hazırlık kontrolü, ayrı SQLite gerekçe günlüğü ve yerel Ollama model listesi sağlık kontrolü eklendi. Kontrol sanal işlem yürütmez; haber, sürekli risk ve yürütme kapısı hâlâ kapalıdır. Gerçek model, haber, TradingAgents, tüm piyasa türleri ve canlı borsa doğrulanmadı.
 
 - Yerel sunucuda açık TRY simülasyon pozisyonları için tarayıcıdan taze tip-1 son işlem verisiyle sınırlı değerleme/periodik risk kontrolü eklendi; veri veya katalog yoksa STOP. Diğer quote'lar dönüştürülmez ve eksik fiyat sayılır. Bu akış sentetik testlidir; gerçek Binance TR verisiyle veya Windows'ta doğrulanmadı. Paper emir API'si kapalıdır.
+
+- Sanal işlem olaylarından UTC günlük, son 7 gün ve toplam gerçekleşmiş sonuç/ücret/kayma raporu eklendi. Günlük gerçekleşmemiş değişim için geçmiş fiyat anlık görüntüsü olmadığından bilinmiyor gösterilir; açık pozisyon değerlemesi eksik/eski fiyatlarda bilinmiyor. Gerçek hesap kârı değildir. Ollama yapılandırılmış cevap isteğinde desteklenen modeller için düşünme çıktısı kapatılır; gerçek model testi gerekir.
