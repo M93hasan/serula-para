@@ -23,8 +23,8 @@ export class AccountService {
   remove(passphrase) { return this.#exclusive(()=>{if(typeof passphrase!=='string'||passphrase.length>512) throw Error('Invalid input');loadVault(this.#path,passphrase);unlinkSync(this.#path);}); }
   async balance(passphrase) {
     if(typeof passphrase!=='string'||passphrase.length>512) throw Error('Invalid input');
-    const keys=loadVault(this.#path,passphrase);
-    const response=await this.#client.account(keys);
+    let keys;try { keys=loadVault(this.#path,passphrase); } catch { throw Error('VAULT_UNLOCK_FAILED'); }
+    let response;try { response=await this.#client.account(keys); } catch { throw Error('EXCHANGE_READ_FAILED'); }
     const assets=response?.data?.accountAssets;
     if (!Array.isArray(assets)||assets.length>5000) throw Error('Unexpected response');
     return assets.map(({asset,free,locked})=>{if(typeof asset!=='string'||!/^[-A-Za-z0-9_]{1,32}$/.test(asset)||!decimal(free)||!decimal(locked))throw Error('Unexpected response');return {asset,free,locked};});

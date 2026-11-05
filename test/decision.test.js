@@ -42,3 +42,9 @@ test('analysis endpoint enforces local authentication and origin',async()=>{
   const response=await fetch(url,{method:'POST',headers,body});assert.equal(response.status,200);const result=await response.json();assert.equal(result.decision.action,'AL');assert.equal(result.symbol,'BTC_TRY');assert.equal(result.backtest.trades[0].time,candles[20].time);
  }finally{await new Promise(r=>server.close(r));store.close();}
 });
+test('historical backtest uses fixed symbol even when later volume changes automatic selection',async()=>{
+ const {createServer}=await import('../engine/server.js');const {RiskStore}=await import('../engine/store.js');const store=new RiskStore(':memory:',{budget:1000,maxTrade:100,maxLoss:100}),token='x'.repeat(40);
+ const candles=Array.from({length:40},(_,i)=>candle(i,100+i));const other=candles.map(c=>({...c,quoteVolume:10000}));const market={snapshot:async()=>({asOf:base+40*H,markets:[{symbol:'BTC_TRY',price:10,priceTime:base,candles},{symbol:'ETH_TRY',price:20,priceTime:base,candles:other}]})};const server=createServer({token,simulator:store,market});await new Promise(r=>server.listen(0,'127.0.0.1',r));
+ try{const origin=`http://127.0.0.1:${server.address().port}`;const headers={Authorization:`Bearer ${token}`,Origin:origin,'Sec-Fetch-Site':'same-origin','Content-Type':'application/json','X-Para-Request':'1'};const res=await fetch(origin+'/api/analysis',{method:'POST',headers,body:JSON.stringify({symbol:'BTC_TRY',budget:1000,maxTrade:100,maxLoss:50,feeRate:.001})});const body=await res.json();assert.equal(body.symbol,'BTC_TRY');assert.equal(body.automaticDecision.symbol,'ETH_TRY');assert.equal(body.backtest.curve.length,candles.length);assert.deepEqual(body.backtest.trades,backtest('BTC_TRY',candles,{budget:1000,maxTrade:100,maxLoss:50,feeRate:.001}).trades);
+ }finally{await new Promise(r=>server.close(r));store.close();}
+});

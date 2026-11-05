@@ -33,9 +33,10 @@ export function createServer({ token, simulator, account = null, market = new Ma
         const config=JSON.parse(data);if(!config||typeof config!=='object'||Array.isArray(config))throw Error('Invalid configuration');
         // Validate the configuration before any external request.
         backtest('TEST',[],config);
-        const snapshot=await market.snapshot();const selected=selectMarket(snapshot.markets);const signal=decide(selected.symbol,selected.candles);
-        const result=backtest(selected.symbol,selected.candles,config);
-        return res.end(JSON.stringify({asOf:snapshot.asOf,symbol:selected.symbol,price:selected.price,priceTime:selected.priceTime,decision:signal,backtest:result,candleCount:selected.candles.length}));
+        const symbol=config.symbol; if(symbol!==undefined && !['BTC_TRY','ETH_TRY'].includes(symbol))throw Error('Invalid symbol');
+        const snapshot=await market.snapshot();const auto=selectMarket(snapshot.markets);const selected=snapshot.markets.find(m=>m.symbol===(symbol||'BTC_TRY')); if(!selected)throw Error('Market unavailable');
+        const signal=decide(selected.symbol,selected.candles);const result=backtest(selected.symbol,selected.candles,config);
+        return res.end(JSON.stringify({asOf:snapshot.asOf,symbol:selected.symbol,price:selected.price,priceTime:selected.priceTime,decision:signal,automaticDecision:decide(auto.symbol,auto.candles),markets:snapshot.markets.map(m=>({symbol:m.symbol,price:m.price,priceTime:m.priceTime,candles:m.candles})),backtest:result,candleCount:selected.candles.length}));
       } catch {return res.writeHead(503).end('{"error":"analysis unavailable"}');}
     }
     if (account && req.method==='GET' && req.url==='/api/binance-tr/settings') return res.end(JSON.stringify({configured:account.exists()}));
@@ -48,7 +49,7 @@ export function createServer({ token, simulator, account = null, market = new Ma
         if(req.url.endsWith('/save')) {account.save(input);return res.end('{"ok":true}');}
         if(req.url.endsWith('/delete')) {account.remove(input.passphrase);return res.end('{"ok":true}');}
         const balances=await account.balance(input.passphrase);return res.end(JSON.stringify({connected:true,balances}));
-      } catch {if(!res.headersSent) res.writeHead(400).end('{"error":"operation failed"}');return;}
+      } catch (err) {const allowed=['VAULT_UNLOCK_FAILED','EXCHANGE_READ_FAILED'];const code=allowed.includes(err.message)?err.message:'operation failed';if(!res.headersSent) res.writeHead(400).end(JSON.stringify({error:code}));return;}
     }
     res.writeHead(404).end('{"error":"not found"}');
   });

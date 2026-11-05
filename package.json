@@ -16,5 +16,8 @@
   },
   "engines": {
     "node": ">=22.13.0"
+  },
+  "dependencies": {
+    "lightweight-charts": "^5.2.1"
   }
 }
