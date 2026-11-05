@@ -6,3 +6,5 @@
 - 127.0.0.1:8788 aynı kaynak paneli: bellekte tutulan bearer anahtarı, Host/Origin/Fetch Metadata denetimi, CSP, durum ve acil durdurma. İnternete açılmamalı. Oturum yönetimi, uzaktan erişim, parola kurtarma ve güvenli çok kullanıcılı ortam henüz yok.
 - Eksik: Windows gerçek cihaz testi, canlı TR salt okunur uyumluluk, gerçek piyasa verisi/strateji ve muhasebe, otomatik ajan, canlı işlem risk değerlendirmesi, Cloudflare/uzak sunucu kimlik doğrulaması. Gerçek işlemler kapalıdır.
 - Test: Node testleri, derleme ve Host/Origin sınamaları; bu Linux ortamında Chromium başlatma sistem politikası tarafından engellendi, masaüstü/mobil tarayıcı testi ve Windows cihaz testi yapılmadı.
+
+- Binance TR ayarları: yerel panelden şifreli kasa kaydet/değiştir/sil ve parolayla Binance TR signed spot account sorgusu, gerçek varlıkların salt okunur gösterimi. Sentetik verilerle uçtan uca sunucu testi yapıldı; gerçek hesap ve Windows üzerinde doğrulanmadı. Tarayıcı ortamı yerel servise erişemedi. Binance TR tarafında yalnızca okuma izni elle ayarlanmalıdır.
