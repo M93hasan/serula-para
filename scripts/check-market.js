@@ -8,4 +8,4 @@ try {
     console.log(`${symbol}: son fiyat ${m.price} TRY (${new Date(m.priceTime).toISOString()}), ${m.candles.length} kapalı saatlik mum, son kapanış ${new Date(m.candles.at(-1).closeTime).toISOString()}`);
   }
   console.log('Piyasa kontrolü başarılı. Hesap bilgileri kullanılmadı.');
-} catch(error) {console.error(`Piyasa kontrolü başarısız: ${error.message}. Ağ, saat ve Binance TR erişimini kontrol edin; 30 saniye sonra yeniden deneyin.`);process.exitCode=1;}
+} catch(error) {const reason=error.message==='Market region restricted'?'Binance TR bu ağ veya bölgeden erişimi kısıtlıyor':error.message;console.error(`Piyasa kontrolü başarısız: ${reason}. Ağ, saat ve Binance TR erişimini kontrol edin; 30 saniye sonra yeniden deneyin.`);process.exitCode=1;}

@@ -2,6 +2,7 @@ import { BinanceTR } from './binance-tr.js';
 const INTERVAL=3600000;
 const SYMBOLS=['BTC_TRY','ETH_TRY'];
 function normalizeResponse(value) {
+  if(value && typeof value.msg==='string' && /restrict|location|eligib/i.test(value.msg) && !Array.isArray(value.data)) throw Error('Market region restricted');
   if(Array.isArray(value)) return value;
   if(value && value.code===0 && Array.isArray(value.data)) return value.data;
   throw Error('Unexpected market data');
@@ -18,8 +19,9 @@ export class MarketData {
   async snapshot(){
     if(this.#running || this.#clock()<this.#nextSnapshot)throw Error('Market request in progress or cooldown');this.#running=true;this.#nextSnapshot=this.#clock()+30000;
     try {
-      const nowResult=await this.#exchange.time();const now=nowResult.timestamp;
-      if(!Number.isSafeInteger(now)||Math.abs(this.#clock()-now)>120000)throw Error('Clock invalid');
+      const nowResult=await this.#exchange.time();const now=nowResult.timestamp;const reference=this.#clock();
+      if(!Number.isSafeInteger(now)||Math.abs(reference-now)>120000)throw Error('Clock invalid');
+      const currentTime=()=>now+Math.max(0,this.#clock()-reference);
       const all=await this.#exchange.symbols();const list=all?.data?.list;if(!Array.isArray(list))throw Error('Symbols invalid');
       const selected=[];
       for(const symbol of SYMBOLS){
@@ -35,10 +37,10 @@ export class MarketData {
         if(candles.length<21||candles.some((x,i)=>i>0&&x.time!==candles[i-1].time+INTERVAL)||now-candles.at(-1).closeTime>INTERVAL*2)throw Error('Incomplete or stale candles');
         const trades=await this.#get('/api/v3/trades',new URLSearchParams({symbol:ticker,limit:'1'}));
         const last=trades.at(-1);const price=Number(last?.price),time=last?.time;
-        if(!Number.isFinite(price)||price<=0||!Number.isSafeInteger(time)||time>now+1000||now-time>300000)throw Error('Stale price');
+        if(!Number.isFinite(price)||price<=0||!Number.isSafeInteger(time)||time>currentTime()+1000||currentTime()-time>300000)throw Error('Stale price');
         selected.push({symbol,price,priceTime:time,candles});
       }
-      if(!selected.length)throw Error('No eligible TR market');return {asOf:now,markets:selected};
+      if(!selected.length)throw Error('No eligible TR market');return {asOf:currentTime(),markets:selected};
     } finally {this.#running=false;}
   }
 }

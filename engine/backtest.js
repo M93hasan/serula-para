@@ -5,7 +5,7 @@ export function backtest(symbol,candles,{budget=1000,maxTrade=100,maxLoss=50,fee
   let cash=budget,qty=0,pending=null,halted=false,fees=0,maxDrawdown=0,peak=budget;const trades=[],curve=[];
   for(let i=0;i<candles.length;i++){
     const c=candles[i];
-    if(pending==='AL' && qty===0 && !halted){const spend=Math.min(maxTrade,cash/(1+feeRate));if(spend>0){const fee=spend*feeRate;qty=spend/c.open;cash-=spend+fee;fees+=fee;trades.push({action:'AL',signalTime:candles[i-1].closeTime,time:c.time,price:c.open,notional:spend,fee});}}
+    if(pending==='AL' && qty===0 && !halted){const spend=Math.min(maxTrade,cash)/(1+feeRate);if(spend>0){const fee=spend*feeRate;qty=spend/c.open;cash-=spend+fee;fees+=fee;trades.push({action:'AL',signalTime:candles[i-1].closeTime,time:c.time,price:c.open,notional:spend,fee});}}
     else if(pending==='SAT'&&qty>0){const value=qty*c.open,fee=value*feeRate;cash+=value-fee;fees+=fee;qty=0;trades.push({action:'SAT',signalTime:candles[i-1].closeTime,time:c.time,price:c.open,notional:value,fee});}
     pending=null;const equity=cash+qty*c.close*(1-feeRate);peak=Math.max(peak,equity);maxDrawdown=Math.max(maxDrawdown,peak-equity);
     curve.push({time:c.closeTime,value:equity-budget});
