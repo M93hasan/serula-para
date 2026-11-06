@@ -111,29 +111,38 @@ export class LiveRiskEngine{
   try{this.#verify(context);return this.status();}
   catch(e){this.halt(/^[A-Z_]+$/.test(e.message)?e.message:'RISK_DATA_UNAVAILABLE');return this.status();}
  }
- reserve(order,context){
+ #checkOrder(order,context){
   if(this.status().halted)throw Error('HALTED');
+  this.#verify(context);
+  if(!order||order.side!=='BUY'&&order.side!=='SELL'||!validDecimal(order.notional))throw Error('INVALID_ORDER');
+  if(typeof order.symbol!=='string'||!/^[A-Z0-9]{1,20}_TRY$/.test(order.symbol))throw Error('TRY_QUOTE_REQUIRED');
+  if(compareDecimal(order.notional,this.#limits.maxOrderTry)>0)throw Error('ORDER_LIMIT');
+  const asset=order.symbol.split('_')[0];
+  const current=context.positions.find(p=>p.asset===asset)?.exposureTry||'0';
+  if(order.side==='BUY'&&
+   (compareDecimal(addDecimals(context.totalExposureTry,order.notional),this.#limits.maxTotalExposureTry)>0||
+    compareDecimal(addDecimals(current,order.notional),this.#limits.maxAssetExposureTry)>0))
+   throw Error('POSITION_LIMIT');
+ }
+ #checkJournal(context){
+  // Count submitted attempts, including unresolved and canceled orders, across restarts.
+  const now=this.#clock(),start=now-now%86400000;
+  const {n}=this.#journal.db.prepare('SELECT count(*) AS n FROM live_orders WHERE created_at>=? AND created_at<?').get(start,start+86400000);
+  if(Math.max(n,context.dayTradeCount)>=this.#limits.maxDailyOrders)throw Error('DAILY_TRADE_COUNT');
+  if(this.#journal.pending().length)throw Error('UNRESOLVED_ORDERS');
+ }
+ preview(order,context){
+  this.#checkOrder(order,context);
+  if(this.#journal.get(order.clientId))throw Error('DUPLICATE_CLIENT_ID');
+  this.#checkJournal(context);
+ }
+ reserve(order,context){
   try{
-   this.#verify(context);
-   if(!order||order.side!=='BUY'&&order.side!=='SELL'||!validDecimal(order.notional))throw Error('INVALID_ORDER');
-   if(typeof order.symbol!=='string'||!/^[A-Z0-9]{1,20}_TRY$/.test(order.symbol))throw Error('TRY_QUOTE_REQUIRED');
-   if(compareDecimal(order.notional,this.#limits.maxOrderTry)>0)throw Error('ORDER_LIMIT');
-   // All the exposures are based on observed, externally verified positions.
-   const asset=order.symbol.split('_')[0],current=context.positions.find(p=>p.asset===asset)?.exposureTry||'0';
-   if(order.side==='BUY'&&
-    (compareDecimal(addDecimals(context.totalExposureTry,order.notional),this.#limits.maxTotalExposureTry)>0||
-     compareDecimal(addDecimals(current,order.notional),this.#limits.maxAssetExposureTry)>0))
-    throw Error('POSITION_LIMIT');
-   // Reserve atomically with local journal entry; holds remain across timeouts.
+   this.#checkOrder(order,context);
+   // Repeat risk and pending-order checks inside the transaction that claims the intent.
    return this.#journal.reserve(order,this.#clock(),()=>{
-    if(this.status().halted)throw Error('HALTED');
-    this.#verify(context);
-    // Count all submitted attempts, including unknown/cancelled, to avoid rate-limit bypass.
-    const date=new Date(this.#clock()).toISOString().slice(0,10);
-    const count=this.#journal.db.prepare('SELECT count(*) AS n FROM live_orders WHERE created_at>=? AND created_at<?').get(Date.parse(date+'T00:00:00Z'),Date.parse(date+'T00:00:00Z')+86400000).n;
-    if(Math.max(Number(count),context.dayTradeCount)>=this.#limits.maxDailyOrders)throw Error('DAILY_TRADE_COUNT');
-    const pending=this.#journal.db.prepare("SELECT intent,status FROM live_orders WHERE status NOT IN ('FILLED','CANCELED','REJECTED','EXPIRED')").all();
-    if(pending.length)throw Error('UNRESOLVED_ORDERS');
+    this.#checkOrder(order,context);
+    this.#checkJournal(context);
    });
   }catch(e){
    if(['RISK_DATA_UNAVAILABLE','RISK_DATA_INCONSISTENT','STOP_LOSS_TRIGGERED','DAILY_LOSS_LIMIT','TOTAL_EXPOSURE_LIMIT','ASSET_EXPOSURE_LIMIT'].includes(e.message))this.halt(e.message);

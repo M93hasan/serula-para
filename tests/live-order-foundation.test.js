@@ -19,7 +19,7 @@ const symbolInfo={symbol:'BTC_TRY',type:1,spotTradingEnable:1,status:'TRADING',f
 ]};
 const balances=[{asset:'TRY',free:'500',locked:'900'},{asset:'BTC',free:'0.01',locked:'0'}];
 const inputs={symbolInfo,balances,market:{price:100000,priceTime:now-1000},now,maxNotional:'300'};
-const mockRisk=db=>({reserve:validated=>db.reserve(validated),halt:()=>({halted:true})});
+const mockRisk=db=>({reserve:validated=>db.reserve(validated),status:()=>({halted:false}),halt:()=>({halted:true})});
 const remote=(status,executedQty='0')=>({clientId:order.clientId,symbol:order.symbol,side:0,type:1,price:order.price,status,origQty:order.quantity,executedQty,executedQuoteQty:executedQty==='0'?'0':String(Number(executedQty)*100000),orderId:'42'});
 
 test('exact limits, price age, available-only balance and risk cap',()=>{
@@ -46,11 +46,12 @@ test('disabled gate never sends orders',async()=>{
 test('durable idempotency, partial fills, and timeout reconciliation',async()=>{
  const db=new LiveOrderJournal(':memory:');let sent=0,phase=0;
  const client={
+  openOrders:async()=>[],
   placeLimit:async()=>{sent++;throw Error('TIMEOUT');},
   detail:async()=>phase===0?Promise.reject(Error('NETWORK')):phase===1?remote(1,'0.001'):remote(2,'0.002'),
   cancel:async()=>{throw Error('TIMEOUT');}
  };
- const svc=new LiveOrderService({journal:db,client,loadInputs:async()=>inputs,gate:()=>true,risk:mockRisk(db)});
+ const svc=new LiveOrderService({journal:db,client,loadInputs:async()=>inputs,openOrderSymbols:[order.symbol],gate:()=>true,risk:mockRisk(db)});
  const first=await svc.submit(order);
  assert.equal(first.status,'UNKNOWN');
  await assert.rejects(svc.submit(order),/DUPLICATE_CLIENT_ID/);
@@ -187,14 +188,14 @@ test('network timeout after a prepared order leaves the order unresolved and can
  const db=new LiveOrderJournal(':memory:');
  let writeCalls=0;
  const service=new LiveOrderService({
-  journal:db,gate:()=>true,risk:mockRisk(db),loadInputs:async()=>inputs,
-  client:{placeLimit:async()=>{writeCalls++;throw Error('ETIMEDOUT')},
+  journal:db,gate:()=>true,risk:mockRisk(db),openOrderSymbols:[order.symbol],loadInputs:async()=>inputs,
+  client:{openOrders:async()=>[],placeLimit:async()=>{writeCalls++;throw Error('ETIMEDOUT')},
     detail:async()=>{throw Error('ECONNRESET')}}
  });
  const result=await service.submit(order);
  assert.equal(result.status,'UNKNOWN');
  assert.equal(writeCalls,1);
- await assert.rejects(service.submit({...order,clientId:'para_retry_0001'}),/DUPLICATE_ACTIVE_ORDER/);
+ await assert.rejects(service.submit({...order,clientId:'para_retry_0001'}),/UNRESOLVED_ORDERS/);
  assert.equal(writeCalls,1);
  db.close();
 });
@@ -206,6 +207,7 @@ test('acknowledged identity and unknown cancellation survive restart without a r
   let writes = 0;
   let exchangeStatus = 1;
   const client = {
+    openOrders: async () => [],
     placeLimit: async () => ({ orderId: '42' }),
     detail: async (clientId, orderId) => {
       assert.equal(clientId, order.clientId);
@@ -220,7 +222,7 @@ test('acknowledged identity and unknown cancellation survive restart without a r
     },
   };
   const service = () => new LiveOrderService({
-    journal, client, gate: () => true, risk: mockRisk(journal), loadInputs: async () => inputs,
+    journal, client, gate: () => true, risk: mockRisk(journal), openOrderSymbols: [order.symbol], loadInputs: async () => inputs,
   });
   try {
     const first = service();
