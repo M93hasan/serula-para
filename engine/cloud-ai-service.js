@@ -4,6 +4,37 @@ import {AIAnalyst} from './ai-analyst.js';
 export class CloudAIService {
   #vault;#fetch;#busy=false;#clock;#nextAllowed=0;
   constructor({vault,fetchImpl=fetch,clock=Date.now}){this.#vault=vault;this.#fetch=fetchImpl;this.#clock=clock;}
+  // Read-only provider availability probe. No prompts, charges for generation,
+  // or account keys exposed to browser/logs. Actual verification requires Windows keys.
+  async verifyConnection({provider,principal}){
+    if(this.#busy)throw Error('BUSY');
+    if(this.#clock()<this.#nextAllowed)throw Error('RATE_LIMIT');
+    if(!['openai','gemini'].includes(provider))throw Error('INVALID_PROVIDER');
+    this.#busy=true;this.#nextAllowed=this.#clock()+30000;
+    try{
+      const {apiKey,model}=this.#vault.openForAnalysis({provider,principal});
+      if(typeof model!=='string'||!/^[A-Za-z0-9_.:-]{1,100}$/.test(model))throw Error('MODEL_REQUIRED');
+      const url=provider==='openai'
+        ? 'https://api.openai.com/v1/models/'+encodeURIComponent(model)
+        : 'https://generativelanguage.googleapis.com/v1beta/models/'+encodeURIComponent(model);
+      let response;
+      try{
+        response=await this.#fetch(url,{
+          method:'GET',redirect:'error',headers:provider==='openai'
+            ?{Authorization:'Bearer '+apiKey}:{'x-goog-api-key':apiKey},
+          signal:AbortSignal.timeout(10000)
+        });
+      }catch(error){
+        return {provider,model,verified:false,status:error?.name==='TimeoutError'?'TIMEOUT':'NETWORK_ERROR'};
+      }
+      const status=response.status;
+      if(status===200)return {provider,model,verified:true,status:'API_OK'};
+      return {provider,model,verified:false,status:
+        status===401?'AUTH_REJECTED':status===403?'ACCESS_DENIED':
+        status===404?'MODEL_UNAVAILABLE':status===429?'RATE_LIMITED':
+        status>=500?'PROVIDER_UNAVAILABLE':'PROVIDER_ERROR'};
+    }finally{this.#busy=false;}
+  }
   async analyze({provider,passphrase,principal,snapshot}){
     if(this.#busy)throw Error('BUSY');if(this.#clock()<this.#nextAllowed)throw Error('RATE_LIMIT');this.#nextAllowed=this.#clock()+30000;this.#busy=true;let secret=null;
     try{
