@@ -45,7 +45,7 @@ test('Google and local desktop credentials are isolated and no client-controlled
   const {vault,cleanup}=setup();
   const sim=new RiskStore(':memory:',{budget:1000,maxTrade:100,maxLoss:100});
   const token='t'.repeat(40);
-  const googleAuth={configured:true,user:cookie=>cookie==='session=google'?{id:'identity123'}:null,handle:async()=>null};
+  const googleAuth={configured:true,user:cookie=>cookie==='session=google'?{id:'identity123'}:null,handle:async()=>null,close:()=>{}};
   const server=createServer({token,simulator:sim,aiProviders:vault,googleAuth});
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
   try {
