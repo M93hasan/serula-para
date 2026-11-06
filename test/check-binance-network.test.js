@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
 import {checkBinanceNetwork,formatNetworkResults} from '../scripts/check-binance-network.js';
 test('local diagnostic calls only two fixed public GET endpoints without secrets',async()=>{
  const calls=[];
@@ -32,4 +33,13 @@ test('timeout, errors and redirects are classified without exposing exception me
  assert.equal(result[0].state,'TIMEOUT');
  assert.equal(result[1].state,'REDIRECT');
  assert.doesNotMatch(JSON.stringify(result),/private-API|attacker|secret/);
+});
+
+test('double-click Windows launcher runs only the credential-free diagnostic script',()=>{
+ const cmd=readFileSync(new URL('../check-binance.cmd',import.meta.url),'utf8');
+ assert.match(cmd,/cd \/d "%~dp0"/);
+ assert.match(cmd,/node "scripts\\check-binance-network\.js"/);
+ assert.match(cmd,/where node/);
+ assert.match(cmd,/pause/);
+ assert.doesNotMatch(cmd,/API[_ ]?(?:KEY|SECRET)|\/orders|start-para\.cmd|curl|Invoke-WebRequest/i);
 });
