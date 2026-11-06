@@ -114,11 +114,14 @@ export function createServer({ token, simulator, paper = null, account = null, a
           const scanMatches=scanner.status().results?.filter(m=>m.symbol===order.symbol&&m.status==='candidate')??[];
           if(matches.length!==1||scanMatches.length!==1)throw Error('MARKET_NOT_READY');
           const observed=scanMatches[0];
+          if(!Number.isSafeInteger(observed.asOf)||observed.asOf>Date.now()||Date.now()-observed.asOf>30000)
+            throw Error('MARKET_NOT_READY');
           const price=observed.price;
           if(typeof price!=='number'||!Number.isFinite(price)||price<=0)throw Error('MARKET_NOT_READY');
           const balances=await account.balance(passphrase);
           const risk=checkLiveOrderPreflight({
             order,balances,
+            liquidity:{...observed.indicators,asOf:observed.asOf},
             market:{...matches[0],exchangeTime:catalog.exchangeTime,
               priceTime:observed.priceTime,price:String(price)},
             limits:{halted:simulator.status().halted,realOrdersEnabled:false,
