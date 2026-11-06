@@ -42,7 +42,7 @@ export class MarketScanner {
     const delay=600-(this.#clock()-this.#lastRequest);if(delay>0)await this.#sleep(delay);this.#check(generation);this.#lastRequest=this.#clock();
     const response=await this.#fetch(`https://api.binance.me${path}?${new URLSearchParams(params)}`,{method:'GET',redirect:'error',signal:AbortSignal.any([AbortSignal.timeout(10000),this.#controller.signal])});this.#check(generation);
     if(response.status===429||response.status===418){const raw=response.headers.get('retry-after')?.trim()??'';const retry=/^\d+$/.test(raw)?this.#clock()+Number(raw)*1000:Date.parse(raw);this.#next=Math.max(this.#next,this.#clock()+60000,Number.isSafeInteger(retry)?retry:0);throw Error('RATE_LIMIT');}
-    if(response.status===451)throw Error('REGION_RESTRICTED');if(!response.ok)throw Error('DATA_UNAVAILABLE');
+    if(response.status===403)throw Error('WAF_BLOCKED');if(response.status===451)throw Error('REGION_RESTRICTED');if(!response.ok)throw Error('DATA_UNAVAILABLE');
     const json=await response.json();this.#check(generation);if(json&&typeof json.msg==='string'&&/restrict|location|eligib/i.test(json.msg))throw Error('REGION_RESTRICTED');
     return json?.code===0?json.data:json;
   }
@@ -69,7 +69,7 @@ export class MarketScanner {
           :'Hacim, derinlik veya makas yetersiz.';
         const signal=eligible?decide(m.symbol,candles):null;
         this.#state.results.push({symbol:m.symbol,baseAsset:m.baseAsset,quoteAsset:m.quoteAsset,status:eligible?'candidate':'excluded',researchSignal:signal?.action??'BEKLE',signalReason:signal?.reason??'Piyasa ön filtreleri sağlanmadı.',signalScore:signal?.score??0,reason,price,priceTime,asOf:now,indicators:{...indicators,liveMove,latestHourlyMove},candles});
-      }catch(e){if(generation!==this.#generation)return;if(['RATE_LIMIT','REGION_RESTRICTED'].includes(e.message)){this.#state.status=e.message;this.#state.finishedAt=this.#clock();return;}this.#state.results.push({symbol:m.symbol,status:'unavailable',researchSignal:'BEKLE',reason:'Güncel veya geçerli veri yok.'});}
+      }catch(e){if(generation!==this.#generation)return;if(['RATE_LIMIT','REGION_RESTRICTED','WAF_BLOCKED'].includes(e.message)){this.#state.status=e.message;this.#state.finishedAt=this.#clock();return;}this.#state.results.push({symbol:m.symbol,status:'unavailable',researchSignal:'BEKLE',reason:'Güncel veya geçerli veri yok.'});}
     }
     this.#state.status='complete';this.#state.finishedAt=this.#clock();
   }
