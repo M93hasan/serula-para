@@ -14,6 +14,9 @@ export class LiveOrderJournal {
     this.db=new DatabaseSync(path);
     if(path!==':memory:')chmodSync(path,0o600);
     this.db.exec('PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; CREATE TABLE IF NOT EXISTS live_orders (client_id TEXT PRIMARY KEY, symbol TEXT NOT NULL, intent TEXT NOT NULL, status TEXT NOT NULL, order_id TEXT, filled TEXT NOT NULL DEFAULT \'0\', quote_filled TEXT NOT NULL DEFAULT \'0\', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS live_active_intents (fingerprint TEXT PRIMARY KEY, client_id TEXT NOT NULL UNIQUE); CREATE TABLE IF NOT EXISTS live_reconciliation_runs (id INTEGER PRIMARY KEY, trigger TEXT NOT NULL, status TEXT NOT NULL, started_at INTEGER NOT NULL, completed_at INTEGER NOT NULL, symbol_count INTEGER NOT NULL, exchange_open_count INTEGER NOT NULL, pending_count INTEGER NOT NULL, reason TEXT);');
+    // Persist each emergency cancellation attempt *before* the network call.
+    // A crash, timeout, or ambiguous 5XX must never produce a second cancel POST.
+    this.db.exec("CREATE TABLE IF NOT EXISTS live_external_cancel_attempts (symbol TEXT NOT NULL, order_id TEXT NOT NULL, status TEXT NOT NULL CHECK(status IN ('UNKNOWN','ACKNOWLEDGED')), attempted_at INTEGER NOT NULL, PRIMARY KEY(symbol,order_id));");
     // Upgrade an existing development journal without discarding unresolved orders.
     const columns=this.db.prepare('PRAGMA table_info(live_orders)').all().map(c=>c.name);
     if(!columns.includes('created_at')){
@@ -93,6 +96,30 @@ export class LiveOrderJournal {
       if(TERMINAL.has(status))this.db.prepare('DELETE FROM live_active_intents WHERE client_id=?').run(clientId);
       return this.get(clientId);
     });
+  }
+  claimExternalCancel({symbol,orderId},now=Date.now()){
+    if(typeof symbol!=='string'||!/^[A-Z0-9]{1,20}_[A-Z0-9]{1,20}$/.test(symbol)||!Number.isSafeInteger(now)||now<0)
+      throw Error('INVALID_CANCEL_SCOPE');
+    const validated=exchangeOrderId(orderId);
+    return this.#transaction(()=>{
+      // UNKNOWN from the moment of the durable claim: process failure after this
+      // point is indistinguishable from an exchange-accepted cancellation.
+      const result=this.db.prepare("INSERT OR IGNORE INTO live_external_cancel_attempts(symbol,order_id,status,attempted_at) VALUES(?,?,'UNKNOWN',?)")
+        .run(symbol,validated,now);
+      return result.changes===1;
+    });
+  }
+  acknowledgeExternalCancel({symbol,orderId}){
+    if(typeof symbol!=='string'||!/^[A-Z0-9]{1,20}_[A-Z0-9]{1,20}$/.test(symbol))throw Error('INVALID_CANCEL_SCOPE');
+    const validated=exchangeOrderId(orderId);
+    this.db.prepare("UPDATE live_external_cancel_attempts SET status='ACKNOWLEDGED' WHERE symbol=? AND order_id=? AND status='UNKNOWN'")
+      .run(symbol,validated);
+  }
+  externalCancelStatus({symbol,orderId}){
+    if(typeof symbol!=='string'||!/^[A-Z0-9]{1,20}_[A-Z0-9]{1,20}$/.test(symbol))throw Error('INVALID_CANCEL_SCOPE');
+    const validated=exchangeOrderId(orderId);
+    return this.db.prepare('SELECT status FROM live_external_cancel_attempts WHERE symbol=? AND order_id=?')
+      .get(symbol,validated)?.status??null;
   }
   recordReconciliation(run){
     if(!run||!['STARTUP','PERIODIC','MANUAL'].includes(run.trigger)||!['CLEAR','HALTED','FAILED'].includes(run.status)||
