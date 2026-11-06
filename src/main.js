@@ -251,6 +251,8 @@ if(webMode){
       <button id="web-binance-refresh" type="button" disabled>Bakiyeyi yenile</button>
       <button id="web-binance-disconnect" type="button" disabled>Bağlantıyı kes</button>
     </div>
+    <div><button id="web-binance-diagnostic" type="button">Binance TR bağlantısını test et (anahtar gerektirmez)</button></div>
+    <p id="web-binance-diagnostic-status" role="status">Ağ testi henüz yapılmadı.</p>
     <p id="web-binance-status" role="status">Bağlı değil · gerçek emirler kapalı</p>
     <div id="web-binance-balances" aria-live="polite"></div>`;
   $('#view-settings .grid').append(accountPanel);
@@ -262,6 +264,29 @@ if(webMode){
   const webConnect=accountPanel.querySelector('#web-binance-connect');
   const webKey=accountPanel.querySelector('#web-binance-key');
   const webSecret=accountPanel.querySelector('#web-binance-secret');
+  const diagnosticButton=accountPanel.querySelector('#web-binance-diagnostic');
+  const diagnosticStatus=accountPanel.querySelector('#web-binance-diagnostic-status');
+  diagnosticButton.addEventListener('click',async()=>{
+    diagnosticButton.disabled=true;
+    diagnosticStatus.textContent='Binance TR bağlantısı kontrol ediliyor…';
+    try{
+      const res=await fetch('/api/binance-tr/diagnostic',{method:'GET',credentials:'same-origin',cache:'no-store'});
+      const result=await res.json();
+      if(!res.ok){diagnosticStatus.textContent=res.status===429?'Çok sık test yapıldı. Bir dakika sonra deneyin.':'Tanılama servisi kullanılamıyor.';return;}
+      const explanation={
+        HTTP_OK:'Binance TR genel API adresine erişildi. API anahtarı, IP izni ve hesap erişimi ayrıca doğrulanmalı.',
+        ACCESS_BLOCKED:'Binance TR genel API isteği engellendi. Sunucu veya güvenlik duvarı kısıtlaması olabilir.',
+        RATE_LIMITED:'Binance TR istek sınırına ulaşıldı.',
+        REDIRECT:'Binance TR genel API adresi yönlendirme döndürdü.',
+        HTTP_ERROR:'Binance TR genel API adresi hata yanıtı verdi.',
+        NETWORK_ERROR:'Cloudflare sunucusundan Binance TR genel API adresine ulaşılamadı.'
+      };
+      diagnosticStatus.textContent=(explanation[result.status]||'Tanılama sonucu belirsiz.')+
+        (typeof result.httpStatus==='number'?' (HTTP '+result.httpStatus+')':'')+
+        (result.detail==='TIMEOUT'?' · Zaman aşımı':'');
+    }catch{diagnosticStatus.textContent='Tanılama isteği çalıştırılamadı.';}
+    finally{diagnosticButton.disabled=false;}
+  });
   let webRequestBusy=false;
   function renderWebBalances(items){
     webBalances.replaceChildren();
