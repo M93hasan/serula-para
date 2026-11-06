@@ -79,3 +79,43 @@ test('no journal claim capability means emergency containment retains order with
   assert.equal(reason,'CANCEL_OUTCOME_UNKNOWN');
   assert.equal(writes,0);
 });
+
+test('slow or failed read-only exchange order reconciliation blocks submission before any POST',async()=>{
+  const journal=new LiveOrderJournal(':memory:');
+  let writes=0,halted=false,reason='';
+  const risk={status:()=>({halted}),halt:value=>{halted=true;reason=value;}};
+  const service=new LiveOrderService({journal,risk,openOrderSymbols:['BTC_TRY'],gate:()=>true,
+    loadInputs:async()=>{throw Error('SHOULD_NOT_LOAD_WHILE_EXCHANGE_UNKNOWN');},
+    client:{
+      openOrders:async()=>{throw Error('ETIMEDOUT');},
+      placeLimit:async()=>{writes++;}
+    }
+  });
+  try{
+    await assert.rejects(service.submit({symbol:'BTC_TRY',clientId:'para_slow_order_123'}),/ETIMEDOUT/);
+    assert.equal(reason,'OPEN_ORDER_CHECK_FAILED');
+    assert.equal(writes,0);
+    assert.equal(journal.pending().length,0);
+    await assert.rejects(service.submit({symbol:'BTC_TRY',clientId:'para_slow_order_123'}),/HALTED/);
+    assert.equal(writes,0);
+  }finally{journal.close();}
+});
+test('unknown placement blocks the same clientId and semantic order intent after restart',()=>{
+  const dir=mkdtempSync(join(tmpdir(),'para-security-restart-'));
+  const path=join(dir,'journal.sqlite');
+  const original={symbol:'BTC_TRY',clientId:'para_intent_unknown_123',
+    side:'BUY',quantity:'0.001',price:'100000',notional:'100'};
+  let journal;
+  try{
+    journal=new LiveOrderJournal(path);
+    journal.reserve(original,1800000000000);
+    journal.setStatus(original.clientId,'UNKNOWN',1800000000001);
+    journal.close();
+    journal=new LiveOrderJournal(path);
+    assert.equal(journal.get(original.clientId).status,'UNKNOWN');
+    assert.deepEqual(journal.pending(),[original.clientId]);
+    assert.throws(()=>journal.reserve(original,1800000000002),/DUPLICATE_CLIENT_ID/);
+    assert.throws(()=>journal.reserve({...original,clientId:'para_new_id_intent_456'},1800000000002),/DUPLICATE_ACTIVE_ORDER/);
+    assert.equal(journal.db.prepare('SELECT count(*) AS n FROM live_orders').get().n,1);
+  }finally{journal?.close();rmSync(dir,{recursive:true,force:true});}
+});
