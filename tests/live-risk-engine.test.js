@@ -55,7 +55,8 @@ test('daily loss, spread and fee anomalies, stop-loss and missing heartbeat HALT
   [{feeBps:31},'RISK_DATA_UNAVAILABLE'],
   [{connectionHealthy:false},'RISK_DATA_UNAVAILABLE'],
   [{asOf:now-10001},'RISK_DATA_UNAVAILABLE'],
-  [{positions:[{asset:'BNB',exposureTry:'90',costBasisTry:'100',priceTime:now-1000}],totalExposureTry:'90'},'STOP_LOSS_TRIGGERED']
+  [{positions:[{asset:'BNB',exposureTry:'90',costBasisTry:'100',priceTime:now-1000}],totalExposureTry:'90'},'STOP_LOSS_TRIGGERED'],
+  [{positions:[{asset:'BNB',exposureTry:'201',costBasisTry:'201',priceTime:now-1000}],totalExposureTry:'201'},'ASSET_EXPOSURE_LIMIT']
  ]){
   const db=new LiveOrderJournal(':memory:'),risk=make(db);risk.arm(context());
   const bad={...context(),...change};
