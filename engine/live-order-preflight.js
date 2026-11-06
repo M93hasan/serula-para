@@ -9,7 +9,7 @@ const units = value => decimal(value).units;
 const requiredPositive = value => {const n=units(value);if(n<=0n)throw Error('VALUE_NOT_POSITIVE');return n;};
 const integralMultiple=(value,step)=>value%step===0n;
 const fail=(reason)=>Object.freeze({eligible:false,reason,executionEnabled:false});
-export function checkLiveOrderPreflight({order,market,balances,limits,now=Date.now()}={}){
+export function checkLiveOrderPreflight({order,market,balances,limits,liquidity,now=Date.now()}={}){
   try{
     if(!order||!market||!Array.isArray(balances)||!limits||!Number.isSafeInteger(now))return fail('MISSING_INPUT');
     const {symbol,side,price,quantity}=order;
@@ -35,6 +35,15 @@ export function checkLiveOrderPreflight({order,market,balances,limits,now=Date.n
        limits.maxPriceDeviationBps>1000)return fail('INVALID_LIMIT');
     if((p>priceObserved?p-priceObserved:priceObserved-p)*10000n>priceObserved*maxDiffBps)
       return fail('PRICE_DEVIATION');
+    // Stale scanner indicators or insufficient quoted depth forbid even preview approval.
+    // These aggregated metrics cannot replace an immediate order-book check at execution.
+    if(!liquidity||!Number.isSafeInteger(liquidity.asOf)||
+      liquidity.asOf>now||now-liquidity.asOf>30000)return fail('STALE_LIQUIDITY');
+    const {spread,depthQuote,bid,ask}=liquidity;
+    if(![spread,depthQuote,bid,ask].every(x=>typeof x==='number'&&Number.isFinite(x))||
+       spread<0||spread>0.005||depthQuote<=0||bid<=0||ask<bid)
+       return fail('SPREAD_OR_LIQUIDITY');
+    if(depthQuote*100000000<Number(notional)*2)return fail('INSUFFICIENT_DEPTH');
     const base=symbol.split('_')[0],asset=side==='BUY'?'TRY':base;
     const matching=balances.filter(b=>b?.asset===asset);
     if(matching.length!==1)return fail('BALANCE_UNAVAILABLE');
