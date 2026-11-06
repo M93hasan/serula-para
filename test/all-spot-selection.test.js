@@ -11,7 +11,7 @@ const candles=Array.from({length:40},(_,i)=>{
   const time=end-(40-i)*hour;
   return {time,closeTime:time+hour-1,open:10,high:12,low:9,close:11,volume:100,quoteVolume:1100};
 });
-const mkMarket=symbol=>({symbol,price:11,priceTime:now-1000,candles});
+const mkMarket=symbol=>({symbol,price:11,priceTime:Date.now()-1000,candles}); // HTTP AI cache must be fresh against the server clock.
 const config=symbol=>({symbol,budget:1000,maxTrade:100,maxLoss:50,feeRate:.001});
 
 test('fresh exchange catalogue allows a non-BTC/ETH active type-1 spot symbol and rejects disabled/unsupported symbols',async()=>{
