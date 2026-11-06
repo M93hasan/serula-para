@@ -1,5 +1,5 @@
 // Local market-research scheduler. Never executes paper orders or real orders.
-const STOP_STATES=new Set(['RATE_LIMIT','REGION_RESTRICTED','unavailable']);
+const STOP_STATES=new Set(['RATE_LIMIT','REGION_RESTRICTED','WAF_BLOCKED','unavailable']);
 export class ScanAutomation {
   #scanner;#clock;#timer=null;#enabled=false;#lastCompletedAt=0;#lastError=null;
   #intervalMs;#pollMs;
