@@ -4,7 +4,7 @@ import { AutonomousResearch } from '../engine/autonomous-research.js';
 import { cloudConnectivity } from '../engine/cloud-connectivity.js';
 
 const now=1700000000000;
-const candidate=()=>({symbol:'BTC_TRY',status:'candidate',asOf:now,priceTime:now,price:3000000,candles:Array.from({length:35},()=>({close:1})),researchSignal:'AL',indicators:{volume24:100000,spread:0.001,volatility:0.02,depthQuote:10000,estimatedRoundTripCost:0.005}});
+const candidate=()=>({symbol:'BTC_TRY',status:'candidate',asOf:now,priceTime:now,price:3000000,candles:Array.from({length:35},()=>({close:1})),researchSignal:'AL',indicators:{volume24:100000,spread:0.001,volatility:0.02,depthQuote:10000,estimatedRoundTripCost:0.005,movementRisk:{safe:true,reason:'OK'}}});
 function setup({status='complete',decision={symbol:'BTC_TRY',action:'AL',time:now,newsVerified:false,risk:'BELİRSİZ',roles:[]},results=[candidate()]}={}){
  const events=[],state={status,finishedAt:now,results};
  const scanner={status:()=>state};
