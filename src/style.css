@@ -144,6 +144,24 @@ input:not([type=checkbox]){background:#111;border-radius:2px;border-color:#333;c
 :root{font-family:"DM Sans","Segoe UI",system-ui,sans-serif}
 body{font-size:14px;line-height:1.55}
 button,input,select,textarea{font-family:inherit;font-size:14px}
+.setup-open{overflow:hidden}
+.setup-overlay{position:fixed;inset:0;background:#000e;z-index:80;display:grid;place-items:center;padding:16px;overflow:auto}
+.setup-overlay[hidden],.setup-step[hidden]{display:none}
+.setup-dialog{width:min(620px,100%);max-height:calc(100vh - 32px);overflow:auto;background:#0b0b0b;border:1px solid #555;box-shadow:0 20px 90px #000;padding:18px}
+.setup-heading{display:flex;align-items:start;justify-content:space-between;gap:16px;border-bottom:1px solid var(--ot-stroke);padding-bottom:14px}
+.setup-heading h2{font-size:19px;margin:4px 0 0;letter-spacing:0}
+.setup-progress{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));list-style:none;margin:16px 0;padding:0;border:1px solid var(--ot-stroke)}
+.setup-progress li{display:flex;align-items:center;gap:8px;padding:9px;color:#777;border-right:1px solid var(--ot-stroke)}
+.setup-progress li:last-child{border-right:0}
+.setup-progress strong{display:grid;place-items:center;width:22px;height:22px;border:1px solid #555;color:#aaa}
+.setup-progress .active{color:var(--ot-amber);background:#22190b}
+.setup-progress .active strong,.setup-progress .complete strong{border-color:var(--ot-amber);color:var(--ot-amber)}
+.setup-progress .complete{color:#bbb}
+.setup-step h3{font-size:16px;margin:0 0 5px}
+.setup-step>p{color:#999;margin:0 0 15px}
+.setup-step button[type=submit],#setup-google-login{margin-top:18px}
+.setup-step select{display:block;width:100%;margin-top:7px;padding:9px;border:1px solid #333;border-radius:2px;background:#111;color:#eee}
+#setup-google-status,#setup-binance-status,#setup-ai-status{margin-top:14px;overflow-wrap:anywhere}
 .brand small,.aside-foot small,.navlabel,.eyebrow,.status-pill,.badge,
 .terminal-ticker,.cardhead,.card small,.panel-head p,.chart-footer,th,
 .command-launch kbd,.command-heading,.command-result span{font-size:12px;letter-spacing:.03em}
@@ -154,4 +172,8 @@ table,label{font-size:14px}
  .nav{font-size:14px}
  .topbar h1{font-size:16px}
  .terminal-ticker{font-size:12px}
+ .setup-dialog{padding:13px}
+ .setup-heading{display:block}
+ .setup-heading .status-pill{margin-top:10px}
+ .setup-progress li{display:grid;justify-items:center;gap:3px;padding:7px 3px;font-size:12px}
 }
