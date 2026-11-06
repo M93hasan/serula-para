@@ -13,6 +13,21 @@ export function estimateDepth(book,side,quantity){
   const average=total/quantity,slippage=side==='AL'?average/best-1:1-average/best;if(!Number.isFinite(average)||!Number.isFinite(slippage))throw Error('invalid order book');return {available:true,average,slippage:Math.max(0,slippage),notional:total};
 }
 
+export function movementRisk(candles,price){
+ if(!Array.isArray(candles)||candles.length<35||!Number.isFinite(price)||price<=0)return {safe:false,reason:'MISSING_RISK_DATA'};
+ const recent=candles.slice(-21).map(x=>x.close);
+ if(recent.some(x=>!Number.isFinite(x)||x<=0))return {safe:false,reason:'MISSING_RISK_DATA'};
+ const last=recent.at(-1),previous=recent.at(-2);
+ const candleJump=Math.abs(last/previous-1);
+ const liveJump=Math.abs(price/last-1);
+ const returns=recent.slice(1).map((x,i)=>x/recent[i]-1);
+ const maxJump=Math.max(...returns.map(Math.abs));
+ const average=returns.reduce((a,b)=>a+b,0)/returns.length;
+ const volatility=Math.sqrt(returns.reduce((a,b)=>a+(b-average)**2,0)/returns.length);
+ const safe=candleJump<=0.05&&liveJump<=0.05&&maxJump<=0.09&&volatility<=0.04;
+ return {safe,reason:safe?'OK':'SHARP_MOVE_OR_HIGH_VOLATILITY',candleJump,liveJump,maxJump,volatility};
+}
+
 export function analyzeMarket(candles,book,now=Date.now()) {
   if(!Array.isArray(candles)||candles.length<35)throw Error('insufficient candles');
   if(candles.some((c,i)=>!Number.isSafeInteger(c.time)||c.closeTime!==c.time+HOUR-1||c.closeTime>=now||![c.open,c.high,c.low,c.close,c.volume,c.quoteVolume].every(Number.isFinite)||c.open<=0||c.close<=0||c.low<=0||c.high<Math.max(c.open,c.close,c.low)||c.low>Math.min(c.open,c.close,c.high)||c.volume<0||c.quoteVolume<0||(i&&c.time!==candles[i-1].time+HOUR)))throw Error('invalid candles');
@@ -56,9 +71,10 @@ export class MarketScanner {
         if(!Number.isFinite(price)||price<=0||!Number.isSafeInteger(priceTime)||priceTime>now+1000||now-priceTime>300000)throw Error('stale price');
         const indicators=analyzeMarket(candles,book,now);
         // Quote units differ; no cross-quote liquidity or profit ranking is invented.
-        const eligible=indicators.volume24>0&&indicators.topDepthQuote>0&&indicators.spread<=0.01;
+        const movement=movementRisk(candles,price);
+        const eligible=movement.safe&&indicators.volume24>0&&indicators.topDepthQuote>0&&indicators.spread<=0.01;
         const signal=eligible?decide(m.symbol,candles):null;
-        this.#state.results.push({symbol:m.symbol,baseAsset:m.baseAsset,quoteAsset:m.quoteAsset,status:eligible?'candidate':'excluded',researchSignal:signal?.action??'BEKLE',signalReason:signal?.reason??'Piyasa ön filtreleri sağlanmadı.',signalScore:signal?.score??0,reason:eligible?'Kural tabanlı araştırma sinyali; AI ve risk onayı gerekli.':'Hacim, derinlik veya makas yetersiz.',price,priceTime,asOf:now,indicators,candles});
+        this.#state.results.push({symbol:m.symbol,baseAsset:m.baseAsset,quoteAsset:m.quoteAsset,status:eligible?'candidate':'excluded',researchSignal:signal?.action??'BEKLE',signalReason:signal?.reason??'Piyasa ön filtreleri sağlanmadı.',signalScore:signal?.score??0,reason:eligible?'Kural tabanlı araştırma sinyali; AI ve risk onayı gerekli.':movement.safe?'Hacim, derinlik veya makas yetersiz.':'Ani fiyat hareketi veya oynaklık risk filtresini aştı.',price,priceTime,asOf:now,indicators:{...indicators,movementRisk:movement},candles});
       }catch(e){if(generation!==this.#generation)return;if(['RATE_LIMIT','REGION_RESTRICTED'].includes(e.message)){this.#state.status=e.message;this.#state.finishedAt=this.#clock();return;}this.#state.results.push({symbol:m.symbol,status:'unavailable',researchSignal:'BEKLE',reason:'Güncel veya geçerli veri yok.'});}
     }
     this.#state.status='complete';this.#state.finishedAt=this.#clock();
