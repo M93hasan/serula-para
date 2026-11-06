@@ -111,6 +111,17 @@ export function createServer({ token, simulator, paper = null, account = null, a
         return res.end(JSON.stringify(scanAutomation.status()));
       }catch{return res.writeHead(503).end('{"error":"automation unavailable"}');}
     }
+    // Read-only market snapshot for chart refreshes; never executes a simulation or order.
+    if(req.method==='GET' && req.url==='/api/markets/chart') {
+      try {
+        const snapshot=await market.snapshot();
+        latestMarkets=snapshot.markets;
+        return res.end(JSON.stringify(snapshot));
+      } catch(err) {
+        const code=/cooldown|in progress/i.test(err.message)?'RATE_LIMIT':/region restricted/i.test(err.message)?'REGION_RESTRICTED':/stale|incomplete/i.test(err.message)?'STALE_DATA':'MARKET_CONNECTION';
+        return res.writeHead(503).end(JSON.stringify({error:code}));
+      }
+    }
     if(req.method==='GET' && req.url==='/api/markets/scan') {const state=scanner.status();return res.end(JSON.stringify({...state,results:state.results.map(({candles,...item})=>item)}));}
     if(req.method==='POST' && req.url==='/api/markets/scan') {
       if(req.headers.origin!==origin||req.headers['sec-fetch-site']!=='same-origin'||req.headers['content-type']!=='application/json'||req.headers['x-para-request']!=='1')return res.writeHead(403).end('{"error":"forbidden"}');
