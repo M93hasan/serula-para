@@ -69,7 +69,7 @@ export class MarketScanner {
           :'Hacim, derinlik veya makas yetersiz.';
         const signal=eligible?decide(m.symbol,candles):null;
         this.#state.results.push({symbol:m.symbol,baseAsset:m.baseAsset,quoteAsset:m.quoteAsset,status:eligible?'candidate':'excluded',researchSignal:signal?.action??'BEKLE',signalReason:signal?.reason??'Piyasa ön filtreleri sağlanmadı.',signalScore:signal?.score??0,reason,price,priceTime,asOf:now,indicators:{...indicators,liveMove,latestHourlyMove},candles});
-      }catch(e){if(generation!==this.#generation)return;if(['RATE_LIMIT','REGION_RESTRICTED','WAF_BLOCKED'].includes(e.message)){this.#state.status=e.message;this.#state.finishedAt=this.#clock();return;}this.#state.results.push({symbol:m.symbol,status:'unavailable',researchSignal:'BEKLE',reason:'Güncel veya geçerli veri yok.'});}
+      }catch(e){if(generation!==this.#generation)return;if(['RATE_LIMIT','REGION_RESTRICTED','WAF_BLOCKED'].includes(e.message)){this.#state.status=e.message;this.#state.results=[];this.#state.finishedAt=this.#clock();return;}this.#state.results.push({symbol:m.symbol,status:'unavailable',researchSignal:'BEKLE',reason:'Güncel veya geçerli veri yok.'});}
     }
     this.#state.status='complete';this.#state.finishedAt=this.#clock();
   }
