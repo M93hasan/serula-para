@@ -5,7 +5,7 @@ import { createServer } from '../engine/server.js';
 const token='a'.repeat(64);
 const order={symbol:'BTC_TRY',side:'BUY',quantity:'0.001',price:'100000'};
 const passphrase='test-passphrase-16chars';
-function fixture({stale=false,halted=false,insufficient=false,accountConnected=true}={}){
+function fixture({stale=false,staleScan=false,wideSpread=false,shallow=false,halted=false,insufficient=false,accountConnected=true}={}){
   const now=Date.now();
   const market={symbol:'BTC_TRY',type:1,quoteAsset:'TRY',baseAsset:'BTC',filtersPresent:true,
     filters:{tickSize:'0.01',stepSize:'0.000001',minQty:'0.000001',minNotional:'10'}};
@@ -18,7 +18,9 @@ function fixture({stale=false,halted=false,insufficient=false,accountConnected=t
     }},
     universe:{discover:async()=>({exchangeTime:now,markets:[market]})},
     scanner:{status:()=>({status:'complete',results:[{symbol:'BTC_TRY',status:'candidate',
-      price:100000,priceTime:stale?now-31000:now}]}),stop:()=>{}}
+      price:100000,priceTime:stale?now-31000:now,
+      asOf:staleScan?now-31000:now,
+      indicators:{spread:wideSpread?0.02:0.001,depthQuote:shallow?10:1000,bid:99999,ask:100001}}]}),stop:()=>{}}
   };
 }
 async function localServer(fn,config={}){
@@ -72,6 +74,9 @@ test('requires authorization, origin and correct payload',async()=>{
 for(const [label,config,reason] of [
   ['stale ticker',{stale:true},'PREFLIGHT_STALE_MARKET'],
   ['halt active',{halted:true},'PREFLIGHT_HALT_OR_EXECUTION_LOCK'],
+  ['stale scan',{staleScan:true},'MARKET_NOT_READY'],
+  ['wide spread',{wideSpread:true},'PREFLIGHT_SPREAD_OR_LIQUIDITY'],
+  ['shallow order book',{shallow:true},'PREFLIGHT_INSUFFICIENT_DEPTH'],
   ['insufficient account balance',{insufficient:true},'PREFLIGHT_INSUFFICIENT_BALANCE'],
   ['account disconnected',{accountConnected:false},'ACCOUNT_NOT_CONFIGURED']
 ]){
