@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from '../engine/server.js';
+import { OrderIntentJournal } from '../engine/order-intent-journal.js';
 
 const token='a'.repeat(64);
 const order={symbol:'BTC_TRY',side:'BUY',quantity:'0.001',price:'100000'};
@@ -24,7 +25,8 @@ function fixture({stale=false,staleScan=false,wideSpread=false,shallow=false,hal
   };
 }
 async function localServer(fn,config={}){
-  const server=createServer({token,...fixture(config)});
+  const orderJournal=new OrderIntentJournal(':memory:');
+  const server=createServer({token,...fixture(config),orderJournal});
   await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
   const base='http://127.0.0.1:'+server.address().port;
   const post=async(path,body,headers={})=>{
@@ -33,10 +35,10 @@ async function localServer(fn,config={}){
       'content-type':'application/json','x-para-request':'1',...headers},body:JSON.stringify(body)});
     return {status:res.status,body:await res.json().catch(()=>({}))};
   };
-  try{await fn({post,base});}finally{await new Promise(resolve=>server.close(resolve));}
+  try{await fn({post,base,orderJournal});}finally{await new Promise(resolve=>server.close(resolve));orderJournal.close();}
 }
 test('preflight checks passphrase, available balance and market before granting preview',async()=>{
-  await localServer(async({post})=>{
+  await localServer(async({post,orderJournal})=>{
     const preview=await post('/api/manual-order/preview',{...order,passphrase});
     assert.equal(preview.status,200);
     assert.equal(preview.body.estimatedNotionalTry,100);
@@ -48,6 +50,8 @@ test('preflight checks passphrase, available balance and market before granting 
     assert.equal(confirm.status,200);
     assert.equal(confirm.body.status,'APPROVED_NOT_SENT');
     assert.equal(confirm.body.executionEnabled,false);
+    assert.equal(confirm.body.journalStatus,'RESERVED');
+    assert.equal(orderJournal.status(confirm.body.intentId).status,'RESERVED');
     const replay=await post('/api/manual-order/approve',{
       id:preview.body.id,digest:preview.body.digest,confirmation:'ONAYLA '+preview.body.id
     });
