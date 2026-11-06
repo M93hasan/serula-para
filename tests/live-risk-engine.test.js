@@ -10,7 +10,7 @@ const now=1800000000000;
 const midnight=Date.parse(new Date(now).toISOString().slice(0,10)+'T00:00:00Z');
 const order=(id='para_risk_0001',notional='100')=>({clientId:id,symbol:'BTC_TRY',side:'BUY',quantity:'0.001',price:'100000',notional});
 const context=()=>({source:'verified-exchange-risk-monitor',connectionHealthy:true,asOf:now,
- dayStartAt:midnight,dayTradeCount:0,dayRealizedPnlTry:'0',totalExposureTry:'0',
+ dayStartAt:midnight,dayTradeCount:0,dayRealizedPnlTry:'0',dayNetPnlTry:'0',totalExposureTry:'0',
  positions:[],feeBps:10,spreadBps:12,slippageBps:10,volatilityBps:90});
 const make=(db,changes={})=>new LiveRiskEngine({journal:db,clock:()=>now,
  approval:()=>true,healthProvider:async()=>context(),...changes});
@@ -50,6 +50,7 @@ test('successful reservation is persisted atomically and blocks unresolved order
 test('daily loss, spread and fee anomalies, stop-loss and missing heartbeat HALT',()=>{
  for(const [change,expected] of [
   [{dayRealizedPnlTry:'-75'},'DAILY_LOSS_LIMIT'],
+  [{dayNetPnlTry:'-75'},'DAILY_LOSS_LIMIT'],
   [{spreadBps:61},'RISK_DATA_UNAVAILABLE'],
   [{feeBps:31},'RISK_DATA_UNAVAILABLE'],
   [{connectionHealthy:false},'RISK_DATA_UNAVAILABLE'],
