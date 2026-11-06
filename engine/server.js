@@ -32,6 +32,7 @@ export function createServer({ token, simulator, paper = null, account = null, a
   const localGoogle=googleAuth||createLocalGoogleAuth();
   let latestMarkets=[];
   let latestScanDecision=null;
+  let haltGeneration=0;
   const cloudAI=cloudAIService||(aiProviders?new CloudAIService({vault:aiProviders}):null);
   const scanAutomation = new ScanAutomation(scanner);
   const autonomousResearch = new AutonomousResearch({scanner,analyst:ai,store:simulator,paper});
@@ -71,7 +72,7 @@ export function createServer({ token, simulator, paper = null, account = null, a
         const input=JSON.parse(body);if(!input||typeof input!=='object'||Array.isArray(input)||Object.keys(input).some(k=>!['provider','passphrase','symbol','consent'].includes(k))||input.consent!==true||typeof input.symbol!=='string'||!/^[A-Z0-9]{1,20}_[A-Z0-9]{1,20}$/.test(input.symbol))throw Error('INVALID');
         const snapshot=latestMarkets.find(m=>m.symbol===input.symbol);if(!snapshot)throw Error('NO_MARKET');
         const catalog=await universe.discover();if(!catalog.markets.some(m=>m.symbol===input.symbol&&m.type===1))throw Error('UNVERIFIED');
-        const result=await cloudAI.analyze({provider:input.provider,passphrase:input.passphrase,snapshot});result.startedAt=result.time;result.time=Date.now();simulator.saveAI(result);return res.end(JSON.stringify(result));
+        const analysisGeneration=haltGeneration;const result=await cloudAI.analyze({provider:input.provider,passphrase:input.passphrase,snapshot});if(analysisGeneration!==haltGeneration)return res.writeHead(409).end('{"error":"halted"}');result.startedAt=result.time;result.time=Date.now();simulator.saveAI(result);return res.end(JSON.stringify(result));
       }catch{return res.writeHead(400).end('{"error":"provider analysis unavailable"}');}
     }
     if(req.method==='GET' && req.url==='/api/ai/providers') {
@@ -171,9 +172,19 @@ export function createServer({ token, simulator, paper = null, account = null, a
     }
     if(req.method==='POST' && req.url==='/api/ai/scan-best') {
       if(req.headers.origin!==origin||req.headers['sec-fetch-site']!=='same-origin'||req.headers['content-type']!=='application/json'||req.headers['x-para-request']!=='1')return res.writeHead(403).end('{"error":"forbidden"}');
-      try{const state=scanner.status(),catalog=await universe.discover();const candidate=state.results.filter(x=>x.status==='candidate'&&Date.now()-x.asOf<300000&&catalog.markets.some(m=>m.symbol===x.symbol&&m.type===1)).sort((a,b)=>a.indicators.estimatedRoundTripCost-b.indicators.estimatedRoundTripCost)[0];if(!candidate)return res.writeHead(409).end('{"error":"no fresh candidate"}');const result=await ai.analyze(candidate,{catalogApproved:true});result.startedAt=result.time;result.time=Date.now();simulator.saveAI(result);latestScanDecision={decision:result,candidate};return res.end(JSON.stringify(result));}catch{return res.writeHead(503).end('{"error":"ai unavailable"}');}
+      try{const state=scanner.status(),catalog=await universe.discover();const candidate=state.results.filter(x=>x.status==='candidate'&&Date.now()-x.asOf<300000&&catalog.markets.some(m=>m.symbol===x.symbol&&m.type===1)).sort((a,b)=>a.indicators.estimatedRoundTripCost-b.indicators.estimatedRoundTripCost)[0];if(!candidate)return res.writeHead(409).end('{"error":"no fresh candidate"}');const analysisGeneration=haltGeneration;const result=await ai.analyze(candidate,{catalogApproved:true});if(analysisGeneration!==haltGeneration)return res.writeHead(409).end('{"error":"halted"}');result.startedAt=result.time;result.time=Date.now();simulator.saveAI(result);latestScanDecision={decision:result,candidate};return res.end(JSON.stringify(result));}catch{return res.writeHead(503).end('{"error":"ai unavailable"}');}
     }
-    if(req.method==='POST' && req.url==='/halt') {try {autonomousResearch.setEnabled(false);scanAutomation.setEnabled(false);if(paper)paper.halt();simulator.halt();return res.end(JSON.stringify(simulator.status()));} catch {res.writeHead(503).end('{"error":"storage unavailable"}');return;}}
+    if(req.method==='POST' && req.url==='/halt') {
+      haltGeneration++;
+      autonomousResearch.setEnabled(false);
+      try{scanAutomation.setEnabled(false);}catch{}
+      try{scanner.stop?.();}catch{}
+      let failed=false;
+      try{if(paper)paper.halt();}catch{failed=true;}
+      try{simulator.halt();}catch{failed=true;}
+      if(failed)return res.writeHead(503).end('{"error":"halt confirmation failed"}');
+      return res.end(JSON.stringify({...simulator.status(),autonomous:autonomousResearch.status(),scan:scanAutomation.status(),paper:paper?.status()??null}));
+    }
     if (req.method==='POST' && req.url==='/api/analysis') {
       if(req.headers.origin!==origin || req.headers['sec-fetch-site']!=='same-origin' || req.headers['content-type']!=='application/json' || req.headers['x-para-request']!=='1') {res.writeHead(403).end('{"error":"forbidden"}');return;}
       try {
@@ -203,7 +214,7 @@ export function createServer({ token, simulator, paper = null, account = null, a
         const catalog=await universe.discover();
         const approved=catalog.markets.some(m=>m.symbol===input.symbol&&m.type===1);
         if(!approved)throw Error('Unsupported or disabled symbol');
-        const result=await ai.analyze(snapshot,{catalogApproved:true});result.startedAt=result.time;result.time=Date.now();simulator.saveAI(result);return res.end(JSON.stringify(result));
+        const analysisGeneration=haltGeneration;const result=await ai.analyze(snapshot,{catalogApproved:true});if(analysisGeneration!==haltGeneration)return res.writeHead(409).end('{"error":"halted"}');result.startedAt=result.time;result.time=Date.now();simulator.saveAI(result);return res.end(JSON.stringify(result));
       }catch{return res.writeHead(503).end('{"error":"ai unavailable"}');}
     }
     if (req.method==='GET' && req.url==='/api/binance-tr/value-history') {
