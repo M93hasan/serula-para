@@ -40,3 +40,9 @@ export function assertValidLimitOrder({order,symbolInfo,balances,market,now=Date
   if(compareDecimal(free,required)<0)throw Error('INSUFFICIENT_FREE_BALANCE');
   return Object.freeze({symbol:order.symbol,side:order.side,quantity,price,clientId:order.clientId,notional});
 }
+
+export function exchangeOrderId(value){
+  if(typeof value==='number'&&!Number.isSafeInteger(value))throw Error('INVALID_EXCHANGE_ORDER');
+  if(!['number','string'].includes(typeof value)||!/^[1-9]\d{0,18}$/.test(String(value)))throw Error('INVALID_EXCHANGE_ORDER');
+  return String(value);
+}

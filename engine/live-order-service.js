@@ -17,7 +17,7 @@ export class LiveOrderService {
     catch(e){this.#risk.halt('CONNECTION_FAILURE');throw e;}
     let validated;
     try{
-      validated=assertValidLimitOrder({order,...inputs});
+      validated=assertValidLimitOrder({...inputs,order});
       this.#risk.reserve(validated,inputs.riskContext);
     }catch(e){
       if(['STALE_PRICE','PRICE_DEVIATION','RISK_DATA_UNAVAILABLE','RISK_DATA_INCONSISTENT'].includes(e.message))this.#risk.halt('ABNORMAL_MARKET');
@@ -26,8 +26,7 @@ export class LiveOrderService {
     // Intent and risk reservation are committed BEFORE any network write.
     try{
       const result=await this.#client.placeLimit(validated);
-      if(!result?.orderId)throw Error('ACK_UNVERIFIED');
-      this.#journal.setStatus(order.clientId,'SUBMITTED');
+      this.#journal.acknowledge(order.clientId,result?.orderId);
     }catch{
       this.#journal.setStatus(order.clientId,'UNKNOWN');
       this.#risk.halt('ORDER_OUTCOME_UNKNOWN');
@@ -39,7 +38,7 @@ export class LiveOrderService {
     const existing=this.#journal.get(clientId);
     if(!existing)throw Error('ORDER_NOT_FOUND');
     try{
-      return this.#journal.observe(clientId,await this.#client.detail(clientId));
+      return this.#journal.observe(clientId,await this.#client.detail(clientId,existing.orderId));
     }catch{
       // Never interpret transport failure or an invalid exchange state as rejection.
       this.#risk?.halt('RECONCILIATION_FAILURE');
@@ -51,11 +50,16 @@ export class LiveOrderService {
     const existing=this.#journal.get(clientId);
     if(!existing)throw Error('ORDER_NOT_FOUND');
     if(['CANCELED','FILLED','REJECTED','EXPIRED'].includes(existing.status))return existing;
-    if(['CANCEL_REQUESTED','CANCEL_UNKNOWN'].includes(existing.status))return this.reconcile(clientId);
-    this.#journal.setStatus(clientId,'CANCEL_REQUESTED');
-    try{await this.#client.cancel(clientId);}catch{this.#journal.setStatus(clientId,'CANCEL_UNKNOWN');this.#risk?.halt('CANCEL_OUTCOME_UNKNOWN');}
+    if(!this.#journal.beginCancel(clientId))return this.reconcile(clientId);
+    try{await this.#client.cancel(clientId,existing.orderId);}catch{this.#journal.setStatus(clientId,'CANCEL_UNKNOWN');this.#risk?.halt('CANCEL_OUTCOME_UNKNOWN');}
     // Cancellation acknowledgement is NOT proof there were no partial fills.
     return this.reconcile(clientId);
+  }
+  // Read-only restart/HALT reconciliation for orders already in this journal.
+  async reconcilePending(){
+    const results=[];
+    for(const clientId of this.#journal.pending())results.push(await this.reconcile(clientId));
+    return results;
   }
   halt(reason='MANUAL_HALT'){if(!this.#risk)throw Error('LIVE_RISK_NOT_CONFIGURED');return this.#risk.halt(reason);}
   get(clientId){return this.#journal.get(clientId);}

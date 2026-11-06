@@ -29,7 +29,7 @@ export class LiveRiskEngine{
   this.#journal=journal;this.#limits=Object.freeze({...limits});this.#clock=clock;this.#approval=approval;this.#healthProvider=healthProvider;this.#watchdogIntervalMs=watchdogIntervalMs;
   journal.db.exec("CREATE TABLE IF NOT EXISTS live_risk_state (id INTEGER PRIMARY KEY CHECK(id=1), halted INTEGER NOT NULL, reason TEXT NOT NULL, updated_at INTEGER NOT NULL); INSERT OR IGNORE INTO live_risk_state VALUES (1,1,'STARTUP_LOCK',0);");
   // Restart always requires a fresh independent authorization, never resumes trading.
-  journal.db.prepare("UPDATE live_risk_state SET halted=1,reason='STARTUP_LOCK',updated_at=? WHERE id=1").run(this.#clock());
+  journal.db.prepare("UPDATE live_risk_state SET halted=1,reason='STARTUP_LOCK',updated_at=? WHERE id=1 AND halted=0").run(this.#clock());
  }
  get limits(){return {...this.#limits};}
  status(){const x=this.#journal.db.prepare('SELECT * FROM live_risk_state WHERE id=1').get();return {halted:!!x.halted,reason:x.reason,updatedAt:x.updated_at,limits:this.limits};}
@@ -116,6 +116,7 @@ export class LiveRiskEngine{
   try{
    this.#verify(context);
    if(!order||order.side!=='BUY'&&order.side!=='SELL'||!validDecimal(order.notional))throw Error('INVALID_ORDER');
+   if(typeof order.symbol!=='string'||!/^[A-Z0-9]{1,20}_TRY$/.test(order.symbol))throw Error('TRY_QUOTE_REQUIRED');
    if(compareDecimal(order.notional,this.#limits.maxOrderTry)>0)throw Error('ORDER_LIMIT');
    // All the exposures are based on observed, externally verified positions.
    const asset=order.symbol.split('_')[0],current=context.positions.find(p=>p.asset===asset)?.exposureTry||'0';

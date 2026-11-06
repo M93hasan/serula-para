@@ -27,6 +27,7 @@ test('HALT is default, and absent independent approval/watchdog cannot arm',()=>
 test('reject over-limit orders, position exposure, and daily trade counts',()=>{
  const db=new LiveOrderJournal(':memory:'),risk=make(db);
  risk.arm(context());
+ assert.throws(()=>risk.reserve({...order(),symbol:'BTC_USDT'},context()),/TRY_QUOTE_REQUIRED/);
  assert.throws(()=>risk.reserve(order('para_risk_0002','251'),context()),/ORDER_LIMIT/);
  assert.throws(()=>risk.reserve(order('para_risk_0002','201'),context()),/ORDER_LIMIT|POSITION_LIMIT/);
  assert.equal(db.db.prepare('SELECT COUNT(*) AS n FROM live_orders').get().n,0);
@@ -79,7 +80,7 @@ test('HALT persists and startup restarts locked',()=>{
   risk.close();db.close();
   db=new LiveOrderJournal(path);risk=make(db);
   assert.equal(risk.status().halted,true);
-  assert.equal(risk.status().reason,'STARTUP_LOCK');
+  assert.equal(risk.status().reason,'CONNECTION_FAILURE');
   risk.close();db.close();
  }finally{rmSync(dir,{recursive:true,force:true});}
 });

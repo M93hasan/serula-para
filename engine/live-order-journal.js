@@ -2,9 +2,10 @@ import {DatabaseSync} from 'node:sqlite';
 import {createHash} from 'node:crypto';
 import {mkdirSync,chmodSync} from 'node:fs';
 import {dirname} from 'node:path';
-import {compareDecimal,canonicalDecimal} from './order-rules.js';
+import {compareDecimal,canonicalDecimal,exchangeOrderId} from './order-rules.js';
 
 const STATUSES=new Map([[-2,'PROCESSING'],[0,'NEW'],[1,'PARTIALLY_FILLED'],[2,'FILLED'],[3,'CANCELED'],[4,'PENDING_CANCEL'],[5,'REJECTED'],[6,'EXPIRED']]);
+const CANCEL_PENDING=new Set(['CANCEL_REQUESTED','CANCEL_UNKNOWN']);
 const TERMINAL=new Set(['FILLED','CANCELED','REJECTED','EXPIRED']);
 export class LiveOrderJournal {
   constructor(path){
@@ -37,15 +38,46 @@ export class LiveOrderJournal {
   }
   get(clientId){const x=this.db.prepare('SELECT * FROM live_orders WHERE client_id=?').get(clientId);return x?{clientId:x.client_id,symbol:x.symbol,intent:JSON.parse(x.intent),status:x.status,orderId:x.order_id,executedQty:x.filled,executedQuoteQty:x.quote_filled,createdAt:x.created_at,updatedAt:x.updated_at}:null;}
   setStatus(clientId,status,now=Date.now()){
-    if(!['UNKNOWN','SUBMITTED','CANCEL_UNKNOWN','CANCEL_REQUESTED'].includes(status))throw Error('INVALID_STATE');
-    this.#transaction(()=>{const x=this.get(clientId);if(!x)throw Error('ORDER_NOT_FOUND');if(TERMINAL.has(x.status))return;this.db.prepare('UPDATE live_orders SET status=?,updated_at=? WHERE client_id=?').run(status,now,clientId);});
+    if(!['UNKNOWN','SUBMITTED','CANCEL_UNKNOWN'].includes(status))throw Error('INVALID_STATE');
+    this.#transaction(()=>{
+      const current=this.get(clientId);
+      if(!current)throw Error('ORDER_NOT_FOUND');
+      const expected=status==='CANCEL_UNKNOWN'?'CANCEL_REQUESTED':'RESERVED';
+      if(current.status!==expected)return;
+      this.db.prepare('UPDATE live_orders SET status=?,updated_at=? WHERE client_id=?').run(status,now,clientId);
+    });
     return this.get(clientId);
+  }
+  acknowledge(clientId,rawOrderId,now=Date.now()){
+    const orderId=exchangeOrderId(rawOrderId);
+    return this.#transaction(()=>{
+      const old=this.get(clientId);
+      if(!old)throw Error('ORDER_NOT_FOUND');
+      if(old.orderId&&old.orderId!==orderId)throw Error('INVALID_EXCHANGE_ORDER');
+      this.db.prepare("UPDATE live_orders SET status='SUBMITTED',order_id=?,updated_at=? WHERE client_id=? AND status='RESERVED'").run(orderId,now,clientId);
+      return this.get(clientId);
+    });
+  }
+  beginCancel(clientId,now=Date.now()){
+    return this.#transaction(()=>{
+      const old=this.get(clientId);
+      if(!old)throw Error('ORDER_NOT_FOUND');
+      if(TERMINAL.has(old.status)||CANCEL_PENDING.has(old.status)||old.status==='PENDING_CANCEL'||!old.orderId)return false;
+      this.db.prepare("UPDATE live_orders SET status='CANCEL_REQUESTED',updated_at=? WHERE client_id=?").run(now,clientId);
+      return true;
+    });
+  }
+  pending(){
+    return this.db.prepare("SELECT client_id FROM live_orders WHERE status NOT IN ('FILLED','CANCELED','REJECTED','EXPIRED') ORDER BY created_at,client_id").all().map(row=>row.client_id);
   }
   observe(clientId,remote,now=Date.now()){
     return this.#transaction(()=>{
       const old=this.get(clientId);
       if(!old)throw Error('ORDER_NOT_FOUND');
       if(!remote||remote.clientId!==clientId||remote.symbol!==old.symbol||!STATUSES.has(remote.status))throw Error('INVALID_EXCHANGE_ORDER');
+      const orderId=exchangeOrderId(remote.orderId);
+      if((old.orderId&&old.orderId!==orderId)||remote.side!==(old.intent.side==='BUY'?0:1)||
+         remote.type!==1||compareDecimal(String(remote.price),old.intent.price)!==0)throw Error('INVALID_EXCHANGE_ORDER');
       const filled=String(remote.executedQty),quoteFilled=String(remote.executedQuoteQty);
       const original=String(remote.origQty);
       if(compareDecimal(filled,'0')<0||compareDecimal(quoteFilled,'0')<0||compareDecimal(original,old.intent.quantity)!==0||
@@ -53,9 +85,10 @@ export class LiveOrderJournal {
       let status=STATUSES.get(remote.status);
       if(status==='NEW'&&compareDecimal(filled,'0')>0)status='PARTIALLY_FILLED';
       if(status==='FILLED'&&compareDecimal(filled,original)!==0)throw Error('INVALID_FILL_PROGRESS');
-      if(status==='PARTIALLY_FILLED'&&compareDecimal(filled,'0')===0)throw Error('INVALID_FILL_PROGRESS');
+      if(status==='PARTIALLY_FILLED'&&(compareDecimal(filled,'0')===0||compareDecimal(filled,original)>=0))throw Error('INVALID_FILL_PROGRESS');
+      if((compareDecimal(filled,'0')===0)!==(compareDecimal(quoteFilled,'0')===0))throw Error('INVALID_FILL_PROGRESS');
       if(TERMINAL.has(old.status)&&old.status!==status)throw Error('TERMINAL_STATE_CONFLICT');
-      const orderId=remote.orderId==null?old.orderId:String(remote.orderId);
+      if(!TERMINAL.has(status)&&CANCEL_PENDING.has(old.status))status=old.status;
       this.db.prepare('UPDATE live_orders SET status=?,order_id=?,filled=?,quote_filled=?,updated_at=? WHERE client_id=?').run(status,orderId,filled,quoteFilled,now,clientId);
       if(TERMINAL.has(status))this.db.prepare('DELETE FROM live_active_intents WHERE client_id=?').run(clientId);
       return this.get(clientId);

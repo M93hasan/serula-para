@@ -27,7 +27,7 @@ try{
   risk.close();j.close();
   j=new LiveOrderJournal(file);
   assert.equal(j.get(clientId).status,'UNKNOWN');
-  j.observe(clientId,{clientId,symbol:'BTC_TRY',orderId:i+1,status:2,origQty:'0.001',executedQty:'0.001',executedQuoteQty:'100'},now);
+  j.observe(clientId,{clientId,symbol:'BTC_TRY',orderId:i+1,side:0,type:1,price:'100000',status:2,origQty:'0.001',executedQty:'0.001',executedQuoteQty:'100'},now);
   assert.equal(j.get(clientId).status,'FILLED');
   j.close();
   i++;

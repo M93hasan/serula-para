@@ -1,4 +1,5 @@
 import {createHmac} from 'node:crypto';
+import {exchangeOrderId} from './order-rules.js';
 // Binance TR signed order endpoints ONLY. No withdraw route or generic signed-path access.
 // Not constructed or exposed by the production server.
 export class BinanceTROrderClient {
@@ -24,12 +25,13 @@ export class BinanceTROrderClient {
     if(!['BUY','SELL'].includes(order.side)||!/^para_[A-Za-z0-9_-]{8,64}$/.test(order.clientId))throw Error('INVALID_ORDER');
     return this.#send('POST','/open/v1/orders',{symbol:order.symbol,side:String(order.side==='BUY'?0:1),type:'1',quantity:order.quantity,price:order.price,timeInForce:'1',clientId:order.clientId});
   }
-  detail(clientId){
+  detail(clientId,orderId=null){
     if(!/^para_[A-Za-z0-9_-]{8,64}$/.test(clientId))throw Error('INVALID_ID');
-    return this.#send('GET','/open/v1/orders/detail',{clientId});
+    return this.#send('GET','/open/v1/orders/detail',orderId===null?{clientId}:{orderId:exchangeOrderId(orderId)});
   }
-  cancel(clientId){
+  cancel(clientId,orderId){
     if(!/^para_[A-Za-z0-9_-]{8,64}$/.test(clientId))throw Error('INVALID_ID');
-    return this.#send('POST','/open/v1/orders/cancel',{clientId});
+    if(orderId==null)throw Error('ORDER_ID_REQUIRED');
+    return this.#send('POST','/open/v1/orders/cancel',{orderId:exchangeOrderId(orderId)});
   }
 }
