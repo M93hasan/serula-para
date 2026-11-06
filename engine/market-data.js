@@ -27,6 +27,37 @@ export class MarketData {
     }
     return {asOf:now,markets};
   }
+  // Portfolio valuation: discover listed direct TRY pairs or verified USDT bridges.
+  // All exchange calls use public GET endpoints; private account keys are never passed.
+  async valuationPrices(assets){
+    if(!Array.isArray(assets)||assets.length>40||assets.some(a=>typeof a!=='string'||! /^[A-Z0-9]{1,20}$/.test(a)))throw Error('Invalid assets');
+    const requested=[...new Set(assets)].filter(x=>x!=='TRY');
+    if(!requested.length)return [];
+    const catalogue=await this.#exchange.symbols();
+    const list=catalogue?.data?.list;
+    if(!Array.isArray(list))throw Error('Symbols invalid');
+    const tradable=new Set(list.filter(x=>x?.type===1&&x.spotTradingEnable===1&&(x.status===undefined||x.status==='TRADING')&&typeof x.symbol==='string').map(x=>x.symbol));
+    const pairs=new Set();
+    for(const asset of requested){
+      if(tradable.has(asset+'_TRY'))pairs.add(asset+'_TRY');
+      else if(tradable.has(asset+'_USDT')&&tradable.has('USDT_TRY')){pairs.add(asset+'_USDT');pairs.add('USDT_TRY');}
+    }
+    // A BTC/TRY quote can support BTC equivalents even when BTC isn't held.
+    if(tradable.has('BTC_TRY'))pairs.add('BTC_TRY');
+    const markets=[];
+    for(const symbol of [...pairs].slice(0,40)){
+      try{
+        const rows=await this.#get('/api/v3/trades',new URLSearchParams({symbol:symbol.replace('_',''),limit:'1'}));
+        const row=rows.at(-1),price=Number(row?.price),priceTime=row?.time,now=this.#clock();
+        if(!Number.isFinite(price)||price<=0||!Number.isSafeInteger(priceTime)||priceTime>now+1000||now-priceTime>300000)continue;
+        markets.push({symbol,price,priceTime});
+      }catch(error){
+        if(error.message==='Market cooldown')throw error;
+        // A missing public quote must remain missing, not fabricate a TRY conversion.
+      }
+    }
+    return markets;
+  }
   async snapshot({symbol:requestedSymbol}={}){
     if(this.#running || this.#clock()<this.#nextSnapshot)throw Error('Market request in progress or cooldown');this.#running=true;this.#nextSnapshot=this.#clock()+30000;
     try {
