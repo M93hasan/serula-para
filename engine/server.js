@@ -25,7 +25,7 @@ import { createLocalGoogleAuth } from './local-google-auth.js';
 import { scannerPaperMarks } from './paper-marks.js';
 import { isFreshMarketPrice } from './market-freshness.js';
 
-export function createServer({ token, simulator, paper = null, account = null, aiProviders = null, cloudAIService = null, market = new MarketData(), universe = new MarketUniverse(), scanner = new MarketScanner({universe}), ai = new AIAnalyst(), accountHistory = null, autoScan = false, googleAuth = null, distDir = resolve('dist'),riskIntervalMs=5000 }) {
+export function createServer({ token, simulator, paper = null, account = null, aiProviders = null, cloudAIService = null, market = new MarketData(), universe = new MarketUniverse(), scanner = new MarketScanner({universe}), ai = new AIAnalyst(), accountHistory = null, autoScan = false, googleAuth = null, legacyBinancePath = join(homedir(),'.para','binance-tr.vault'), distDir = resolve('dist'),riskIntervalMs=5000 }) {
   if (typeof token !== 'string' || Buffer.byteLength(token) < 32) throw new Error('Set a random token of at least 32 bytes');
   const expected = Buffer.from(`Bearer ${token}`);
   const localGoogle=googleAuth||createLocalGoogleAuth();
@@ -188,7 +188,7 @@ export function createServer({ token, simulator, paper = null, account = null, a
       if(!accountHistory)return res.writeHead(503).end('{"error":"history unavailable"}');
       try{return res.end(JSON.stringify(accountHistory.history()));}catch{return res.writeHead(503).end('{"error":"history unavailable"}');}
     }
-    if (account && req.method==='GET' && req.url==='/api/binance-tr/settings') return res.end(JSON.stringify({configured:account.exists(),dpapi:account instanceof WindowsBinanceAccountService,legacyAvailable:account instanceof WindowsBinanceAccountService && !account.exists() && existsSync(join(homedir(),'.para','binance-tr.vault'))}));
+    if (account && req.method==='GET' && req.url==='/api/binance-tr/settings') return res.end(JSON.stringify({configured:account.exists(),dpapi:account instanceof WindowsBinanceAccountService,legacyAvailable:account instanceof WindowsBinanceAccountService && !account.exists() && existsSync(legacyBinancePath)}));
     if (account && req.method==='POST' && ['/api/binance-tr/save','/api/binance-tr/test','/api/binance-tr/delete','/api/binance-tr/migrate'].includes(req.url)) {
       if(req.headers.origin!==origin || req.headers['sec-fetch-site']!=='same-origin' || req.headers['content-type']!=='application/json' || req.headers['x-para-request']!=='1') {res.writeHead(403).end('{"error":"forbidden"}');return;}
       let data='', size=0;
@@ -196,7 +196,7 @@ export function createServer({ token, simulator, paper = null, account = null, a
         for await (const chunk of req) {size+=chunk.length; if(size>8192) {res.writeHead(413).end('{"error":"too large"}');return;} data+=chunk.toString('utf8');}
         const input=JSON.parse(data); if(!input||typeof input!=='object'||Array.isArray(input)) throw Error('Invalid input');
         if(req.url.endsWith('/save')) {account.save(input);return res.end('{"ok":true}');}
-        if(req.url.endsWith('/migrate')) {if(!(account instanceof WindowsBinanceAccountService))throw Error('INVALID');account.migrate({legacyPath:join(homedir(),'.para','binance-tr.vault'),passphrase:input.passphrase});return res.end('{"ok":true}');}
+        if(req.url.endsWith('/migrate')) {if(!(account instanceof WindowsBinanceAccountService))throw Error('INVALID');account.migrate({legacyPath:legacyBinancePath,passphrase:input.passphrase});return res.end('{"ok":true}');}
         if(req.url.endsWith('/delete')) {account.remove(input.passphrase);return res.end('{"ok":true}');}
         const balances=await account.balance(input.passphrase);
         // All valuations require fresh observed TRY prices; a partial scan is never a total.
