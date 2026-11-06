@@ -41,6 +41,7 @@ export class MarketData {
     for(const asset of requested){
       if(tradable.has(asset+'_TRY'))pairs.add(asset+'_TRY');
       else if(tradable.has(asset+'_USDT')&&tradable.has('USDT_TRY')){pairs.add(asset+'_USDT');pairs.add('USDT_TRY');}
+      else if(tradable.has(asset+'_BTC')&&tradable.has('BTC_TRY')){pairs.add(asset+'_BTC');pairs.add('BTC_TRY');}
     }
     // A BTC/TRY quote can support BTC equivalents even when BTC isn't held.
     if(tradable.has('BTC_TRY'))pairs.add('BTC_TRY');
