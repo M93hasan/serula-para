@@ -1,0 +1,25 @@
+name: Windows offline order soak
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  windows-offline-soak:
+    runs-on: windows-latest
+    timeout-minutes: 40
+    env:
+      REAL_ORDERS_ENABLED: 'false'
+      PARA_SOAK_MINUTES: ${{ github.event_name == 'workflow_dispatch' && '30' || '1' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Verify no order credentials are exposed
+        shell: pwsh
+        run: |
+          if ($env:REAL_ORDERS_ENABLED -ne 'false') { throw 'Real orders must remain off' }
+      - name: Offline synthetic SQLite and HALT endurance run
+        run: node scripts/soak-offline-windows.mjs
