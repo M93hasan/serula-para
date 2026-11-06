@@ -1,15 +1,36 @@
-// Values are approximate display estimates, never account balances or order amounts.
+// Display-only estimated TRY portfolio values. A missing price never becomes zero.
 export function valuePortfolio(balances,markets,now=Date.now()) {
-  const prices=new Map((markets||[]).filter(m=>Number.isFinite(m.price)&&m.price>0&&Number.isSafeInteger(m.priceTime)&&now-m.priceTime<=300000&&m.priceTime<=now+5000).map(m=>[m.symbol.replace('_TRY',''),m.price]));
-  prices.set('TRY',1);let subtotal=0;const missing=[];let pricedCount=0;
-  for(const b of balances) {
-    const free=Number(b.free),locked=Number(b.locked);
-    if(!Number.isFinite(free)||!Number.isFinite(locked)||free<0||locked<0)throw Error('Invalid balance');
-    if(free===0&&locked===0)continue;
-    const price=prices.get(b.asset);
-    if(!Number.isFinite(price)||price<=0){missing.push(b.asset);continue;}
-    subtotal+=(free+locked)*price;pricedCount++;
+  const graph=new Map(),direct=new Map();
+  for(const market of markets||[]){
+    if(typeof market?.symbol!=='string'||!/^([A-Z0-9]{1,20})_([A-Z0-9]{1,20})$/.test(market.symbol))continue;
+    if(!Number.isFinite(market.price)||market.price<=0||!Number.isSafeInteger(market.priceTime)||market.priceTime>now+5000||now-market.priceTime>300000)continue;
+    const [base,quote]=market.symbol.split('_'),p=market.price;
+    if(!graph.has(base))graph.set(base,[]);
+    if(!graph.has(quote))graph.set(quote,[]);
+    graph.get(base).push([quote,p]);
+    graph.get(quote).push([base,1/p]);
+    if(quote==='TRY')direct.set(base,p);
+  }
+  const tryRate=asset=>{
+    if(asset==='TRY')return 1;
+    if(direct.has(asset))return direct.get(asset);
+    // At most two liquid conversion legs (asset -> quote -> TRY), with no assumed stablecoin peg.
+    for(const [bridge,first] of graph.get(asset)||[]){
+      if(direct.has(bridge))return first*direct.get(bridge);
+    }
+    return null;
+  };
+  let subtotal=0,pricedCount=0;const missing=[];
+  for(const balance of balances){
+    const free=Number(balance.free),locked=Number(balance.locked);
+    if(!Number.isFinite(free)||!Number.isFinite(locked)||free<0||locked<0||typeof balance.asset!=='string')throw Error('Invalid balance');
+    const amount=free+locked;
+    if(amount===0)continue;
+    const rate=tryRate(balance.asset);
+    if(rate===null||!Number.isFinite(rate)||rate<=0){missing.push(balance.asset);continue;}
+    subtotal+=amount*rate;pricedCount++;
   }
   if(!Number.isFinite(subtotal))throw Error('Invalid valuation');
-  return {subtotal,missing,pricedCount,complete:missing.length===0,btc:missing.length===0&&prices.has('BTC')?subtotal/prices.get('BTC'):null};
+  const btcRate=tryRate('BTC');
+  return {subtotal,missing,pricedCount,complete:missing.length===0,btc:missing.length===0&&btcRate!==null?subtotal/btcRate:null};
 }
