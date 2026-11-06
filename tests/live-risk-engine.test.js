@@ -100,3 +100,13 @@ test('preliminary limits are conservative and never authorize execution',()=>{
  assert.equal(DEFAULT_LIVE_RISK_LIMITS.maxDailyLossTry,'75');
  assert.equal(DEFAULT_LIVE_RISK_LIMITS.maxDailyOrders,5);
 });
+
+test('hung health probe triggers automatic HALT without an infinite wait',async()=>{
+ const db=new LiveOrderJournal(':memory:');
+ const risk=make(db,{watchdogIntervalMs:1000,healthProvider:async()=>new Promise(()=>{})});
+ risk.arm(context());
+ await new Promise(resolve=>setTimeout(resolve,1900));
+ assert.equal(risk.status().halted,true);
+ assert.equal(risk.status().reason,'CONNECTION_FAILURE');
+ risk.close();db.close();
+});
