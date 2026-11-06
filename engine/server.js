@@ -22,6 +22,7 @@ import { assessPaperReadiness } from './paper-gate.js';
 import { ollamaStatus } from './ollama-status.js';
 import { createLocalGoogleAuth } from './local-google-auth.js';
 import { scannerPaperMarks } from './paper-marks.js';
+import { ManualOrderApproval } from './manual-order-approval.js';
 
 export function createServer({ token, simulator, paper = null, account = null, aiProviders = null, cloudAIService = null, market = new MarketData(), universe = new MarketUniverse(), scanner = new MarketScanner({universe}), ai = new AIAnalyst(), accountHistory = null, autoScan = false, googleAuth = null, distDir = resolve('dist'),riskIntervalMs=5000 }) {
   if (typeof token !== 'string' || Buffer.byteLength(token) < 32) throw new Error('Set a random token of at least 32 bytes');
@@ -31,6 +32,8 @@ export function createServer({ token, simulator, paper = null, account = null, a
   let latestScanDecision=null;
   const cloudAI=cloudAIService||(aiProviders?new CloudAIService({vault:aiProviders}):null);
   const scanAutomation = new ScanAutomation(scanner);
+  // Preview-only hard cap; no live exchange execution client is reachable from this feature.
+  const manualApproval = new ManualOrderApproval({maxOrderTry:500});
   const server=http.createServer(async (req, res) => {
     res.setHeader('Cache-Control','no-store'); res.setHeader('X-Content-Type-Options','nosniff');
     res.setHeader('Content-Security-Policy', "default-src 'self'; connect-src 'self'; script-src 'self'; style-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
@@ -85,6 +88,32 @@ export function createServer({ token, simulator, paper = null, account = null, a
     if(req.method==='GET' && req.url==='/api/paper/status') {
       if(!paper)return res.writeHead(503).end('{"error":"paper unavailable"}');
       try{let marks=[];try{marks=await scannerPaperMarks({paper,scanner,universe});}catch{}return res.end(JSON.stringify({status:paper.status(),valuation:paper.value(marks),performance:paper.report(marks),history:paper.history(),gateHistory:paper.gateHistory(),notice:'Varsayımsal yerel portföy. Sanal işlem bağlantısı henüz yok.'}));}catch{return res.writeHead(503).end('{"error":"paper unavailable"}');}
+    }
+    if(req.method==='POST' && ['/api/manual-order/preview','/api/manual-order/approve','/api/manual-order/reject'].includes(req.url)) {
+      // Same-origin, authenticated, JSON-only. All approvals are local previews, not orders.
+      if(req.headers.origin!==origin||req.headers['sec-fetch-site']!=='same-origin'||
+         req.headers['content-type']!=='application/json'||req.headers['x-para-request']!=='1')
+        return res.writeHead(403).end('{"error":"forbidden"}');
+      let size=0,raw='';
+      try {
+        for await(const chunk of req) {size+=chunk.length;if(size>1024)return res.writeHead(413).end('{"error":"too large"}');raw+=chunk.toString('utf8');}
+        const payload=JSON.parse(raw);
+        let result;
+        if(req.url.endsWith('/preview'))result=manualApproval.propose(payload);
+        else if(req.url.endsWith('/reject')){
+          if(!payload||typeof payload!=='object'||Array.isArray(payload)||Object.keys(payload).length!==0)throw Error('INVALID_ORDER');
+          manualApproval.cancel();result={status:'REJECTED',executionEnabled:false};
+        }else {
+          if(!payload||typeof payload!=='object'||Array.isArray(payload)||
+             Object.keys(payload).sort().join(',')!=='confirmation,digest,id')throw Error('INVALID_APPROVAL');
+          result=manualApproval.approve(payload);
+        }
+        return res.end(JSON.stringify(result));
+      }catch(error){
+        const allowed=['INVALID_ORDER','INVALID_APPROVAL','APPROVAL_UNAVAILABLE','APPROVAL_REJECTED','ORDER_LIMIT'];
+        return res.writeHead(error.message==='APPROVAL_UNAVAILABLE'||error.message==='APPROVAL_REJECTED'?409:400)
+          .end(JSON.stringify({error:allowed.includes(error.message)?error.message:'INVALID_ORDER'}));
+      }
     }
     if(req.method==='GET' && req.url==='/api/ai/health')return res.end(JSON.stringify(await ollamaStatus()));
     if(req.method==='POST' && req.url==='/api/paper/readiness') {
@@ -189,7 +218,7 @@ export function createServer({ token, simulator, paper = null, account = null, a
     res.writeHead(404).end('{"error":"not found"}');
   });
   if(paper){let monitoring=false;const timer=setInterval(async()=>{if(monitoring)return;monitoring=true;try{if(!paper.status().positions.length)return;let marks=[];try{marks=await scannerPaperMarks({paper,scanner,universe});}catch{}paper.assess(marks);}catch{try{paper.halt();}catch{}}finally{monitoring=false;}},riskIntervalMs);timer.unref();server.on('close',()=>clearInterval(timer));}
-  server.on('close',()=>{scanAutomation.close();localGoogle.close();});
+  server.on('close',()=>{manualApproval.cancel();scanAutomation.close();localGoogle.close();});
   if(autoScan)server.once('listening',()=>{try{scanAutomation.setEnabled(true);}catch{/* fail closed */}});
   return server;
 }
