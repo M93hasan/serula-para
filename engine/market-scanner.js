@@ -37,7 +37,7 @@ export class MarketScanner {
   async #get(path,params){
     const delay=600-(this.#clock()-this.#lastRequest);if(delay>0)await this.#sleep(delay);this.#lastRequest=this.#clock();
     const response=await this.#fetch(`https://api.binance.me${path}?${new URLSearchParams(params)}`,{method:'GET',redirect:'error',signal:AbortSignal.timeout(10000)});
-    if(response.status===429||response.status===418){const retry=Number(response.headers.get('retry-after'));this.#next=Math.max(this.#next,this.#clock()+(Number.isFinite(retry)&&retry>0?retry*1000:60000));throw Error('RATE_LIMIT');}
+    if(response.status===429||response.status===418){const raw=response.headers.get('retry-after')?.trim()??'';const retry=/^\d+$/.test(raw)?this.#clock()+Number(raw)*1000:Date.parse(raw);this.#next=Math.max(this.#next,this.#clock()+60000,Number.isSafeInteger(retry)?retry:0);throw Error('RATE_LIMIT');}
     if(response.status===451)throw Error('REGION_RESTRICTED');if(!response.ok)throw Error('DATA_UNAVAILABLE');
     const json=await response.json();if(json&&typeof json.msg==='string'&&/restrict|location|eligib/i.test(json.msg))throw Error('REGION_RESTRICTED');
     return json?.code===0?json.data:json;

@@ -16,3 +16,15 @@ test('scanner selects catalogue pairs, labels unsupported types, and never sends
 test('regional restrictions stop the scan without reporting remaining pairs as analyzed',async()=>{
  const scanner=new MarketScanner({universe:{discover:async()=>({exchangeTime:now,markets:[{symbol:'XRP_TRY',type:1},{symbol:'BTC_TRY',type:1}]})},fetchImpl:async()=>new Response('',{status:451}),clock:()=>now,sleep:async()=>{}});scanner.start();for(let i=0;i<20&&scanner.status().status==='running';i++)await new Promise(r=>setImmediate(r));assert.equal(scanner.status().status,'REGION_RESTRICTED');assert.equal(scanner.status().results.length,0);
 });
+
+const settle=async scanner=>{for(let i=0;i<30&&scanner.status().status==='running';i++)await new Promise(r=>setImmediate(r));};
+for(const status of [418,429])for(const header of ['120',new Date(now+120000).toUTCString(),'invalid']){
+ test(`rate limit ${status} honors ${header} without requesting later pairs`,async()=>{
+  let clock=now,calls=0;
+  const scanner=new MarketScanner({universe:{discover:async()=>({exchangeTime:now,markets:[{symbol:'BTC_TRY',type:1},{symbol:'SOL_TRY',type:1}]})},clock:()=>clock,sleep:async()=>{},fetchImpl:async()=>{calls++;return new Response('',{status,headers:{'Retry-After':header}});}});
+  scanner.start();assert.throws(()=>scanner.start(),/SCAN_BUSY/);await settle(scanner);
+  assert.equal(scanner.status().status,'RATE_LIMIT');assert.equal(scanner.status().results.length,0);assert.equal(calls,1);
+  clock=now+(header==='invalid'?59000:119000);assert.throws(()=>scanner.start(),/SCAN_BUSY/);assert.equal(calls,1);
+  clock=now+(header==='invalid'?60000:120000);scanner.start();await settle(scanner);assert.equal(calls,2);
+ });
+}

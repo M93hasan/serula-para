@@ -18,3 +18,7 @@ test('AI endpoint uses only server-cached market and requires same-origin authen
   assert.equal((await (await fetch(origin+'/api/ai/history',{headers:{Authorization:`Bearer ${token}`}})).json()).history.length,1);
  }finally{await new Promise(r=>server.close(r));store.close();}
 });
+
+test('analysis rejects a mismatched model and data that expires during inference',async()=>{
+ for(const mode of ['model','stale']) {let clock=now;const agent=new AIAnalyst({clock:()=>clock,model:'local',fetchImpl:async()=>{if(mode==='stale')clock+=300001;return new Response(JSON.stringify({model:mode==='model'?'unexpected':'local',message:{content:JSON.stringify({analysis:'Research'})}}));}});const result=await agent.analyze(snapshot());assert.equal(result.action,'BEKLE');assert.equal(result.roles.length,1);assert.match(result.reason,/geçersiz/);}
+});
