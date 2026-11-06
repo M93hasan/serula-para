@@ -321,6 +321,24 @@ if(webMode){
   accountPanel.querySelector('#web-binance-form').addEventListener('submit',async event=>{
     event.preventDefault();
     if(webRequestBusy)return;
+    // Check public API reachability before transmitting any credentials.
+    // The diagnostic request never contains API keys or secrets.
+    webRequestBusy=true;webConnect.disabled=true;
+    webStatus.textContent='Önce Binance TR sunucu bağlantısı doğrulanıyor…';
+    let network;
+    try{
+      const result=await fetch('/api/binance-tr/diagnostic',{method:'GET',credentials:'same-origin',cache:'no-store'});
+      if(!result.ok)throw Error('DIAGNOSTIC_UNAVAILABLE');
+      network=await result.json();
+    }catch{network=null;}
+    finally{webRequestBusy=false;webConnect.disabled=false;}
+    if(!network?.reachable||network.status!=='HTTP_OK'){
+      webKey.value='';webSecret.value='';
+      webStatus.textContent=network?.status==='ACCESS_BLOCKED'
+        ?'Binance TR Cloudflare isteğini HTTP 403 ile engelledi. API anahtarların gönderilmedi. Bağlantı için yerel motor kullanılmalı.'
+        :'Binance TR genel API bağlantısı doğrulanamadı. Güvenlik için API anahtarların gönderilmedi.';
+      return;
+    }
     // Clear input elements immediately; retain secrets in this tab's memory only until disconnect.
     const credentials={apiKey:webKey.value,secretKey:webSecret.value};
     webKey.value='';webSecret.value='';
