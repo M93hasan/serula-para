@@ -1,8 +1,18 @@
 // Marks are derived exclusively from the local scanner, never from HTTP request bodies.
 // The paper ledger currently defines TRY minor units only; other quotes remain unpriced.
-export async function scannerPaperMarks({paper,scanner,universe,now=Date.now()}){
+export async function scannerPaperMarks({paper,scanner,universe,now=Date.now(),catalogTimeoutMs=2000}){
   const positions=paper.status().positions;if(!positions.length)return [];
-  const catalog=await universe.discover();
+  // A stalled exchange request must not stall the independent risk monitor forever.
+  if(!Number.isSafeInteger(catalogTimeoutMs)||catalogTimeoutMs<1||catalogTimeoutMs>5000)return [];
+  if(!Number.isSafeInteger(now))return [];
+  const started=performance.now();let timeout;
+  const catalog=await Promise.race([
+    Promise.resolve().then(()=>universe.discover()),
+    new Promise(resolve=>{timeout=setTimeout(()=>resolve(null),catalogTimeoutMs);})
+  ]).finally(()=>clearTimeout(timeout));
+  if(!catalog)return [];
+  now+=Math.max(0,Math.floor(performance.now()-started));
+  if(!Number.isSafeInteger(now))return [];
   if(!Number.isSafeInteger(catalog.exchangeTime)||catalog.exchangeTime>now+1000||now-catalog.exchangeTime>120000||!Array.isArray(catalog.markets))return [];
   const results=scanner.status().results;if(!Array.isArray(results))return [];
   const marks=[];

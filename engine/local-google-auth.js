@@ -60,7 +60,7 @@ export function createLocalGoogleAuth({clientId='',clientSecret='',allowedEmail=
         const identity=await verify(tokens.id_token,previous.nonce);
         if(typeof identity.sub!=='string'||!identity.sub||identity.nonce!==previous.nonce)throw Error('INVALID_IDENTITY');
         if(allowedSub&&identity.sub!==allowedSub)throw Error('UNAUTHORIZED_ACCOUNT');
-        if(allowedEmail&&(!identity.email_verified||identity.email?.toLowerCase()!==allowedEmail.toLowerCase()))throw Error('UNAUTHORIZED_ACCOUNT');
+        if(allowedEmail&&(identity.email_verified!==true||typeof identity.email!=='string'||identity.email.toLowerCase()!==allowedEmail.toLowerCase()))throw Error('UNAUTHORIZED_ACCOUNT');
         const session=random();sessions.set(digest(session),{id:identity.sub,email:identity.email||null,expires:clock()+SESSION_MS});
         return new Response(null,{status:303,headers:{...authHeaders,Location:'/', 'Set-Cookie':`${cookieName}=${session}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${SESSION_MS/1000}`}});
       }catch{return new Response('Google identity verification failed.',{status:401,headers:authHeaders});}

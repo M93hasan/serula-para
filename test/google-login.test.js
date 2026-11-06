@@ -63,6 +63,8 @@ test('Google OAuth PKCE, nonce, one-time state, and private cookie session',asyn
 test('Unverified email, wrong user, and nonce mismatch fail closed',async()=>{
   for(const verifyIdentity of [
     async(_token,nonce)=>({sub:'other',nonce,email:allowedEmail,email_verified:false}),
+    async(_token,nonce)=>({sub:'other',nonce,email:allowedEmail,email_verified:'false'}),
+    async(_token,nonce)=>({sub:'other',nonce,email:{},email_verified:true}),
     async(_token,nonce)=>({sub:'other',nonce,email:'evil@example.com',email_verified:true}),
     async(_token,nonce)=>({sub:'other',nonce:'wrong',email:allowedEmail,email_verified:true})
   ]){

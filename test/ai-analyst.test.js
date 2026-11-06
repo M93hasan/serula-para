@@ -29,3 +29,12 @@ test('bounded timeout and sanitized diagnostic codes preserve BEKLE',async()=>{
  const r=await new AIAnalyst({model:'local',clock:()=>now,fetchImpl:async()=>{throw error;}}).analyze(snapshot());assert.equal(r.errorCode,code);assert.equal(r.action,'BEKLE');assert.ok(!JSON.stringify(r).includes('private'));
  }
 });
+
+test('compact local prompts preserve all validated candles and bound prior responses',async()=>{
+ const requests=[];const input=snapshot();
+ const agent=new AIAnalyst({clock:()=>now,model:'local',fetchImpl:async(_url,options)=>{
+  requests.push(JSON.parse(options.body));return new Response(JSON.stringify({message:{content:JSON.stringify({analysis:'x'.repeat(1000)})}}));
+ }});
+ const result=await agent.analyze(input);assert.equal(result.action,'BEKLE');assert.equal(result.roles.length,6);assert.equal(requests.length,5);
+ for(const request of requests){const prompt=JSON.parse(request.messages[1].content);assert.equal(prompt.facts.candles.length,20);assert.deepEqual(prompt.facts.candleColumns,['time','closeTime','open','high','low','close','volume']);assert.deepEqual(prompt.facts.candles[19],Object.values(input.candles[19]));assert.ok(prompt.previous.every(role=>role.text.length<=300));assert.equal(request.options.num_predict,120);assert.ok(!JSON.stringify(prompt).includes('DO-NOT-SEND'));}
+});
