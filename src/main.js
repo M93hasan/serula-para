@@ -294,7 +294,7 @@ $('#analysis-run').addEventListener('click',runAnalysis);setInterval(()=>{if(tok
 // AI and deterministic SMA results are deliberately separate.
 const providerPanel=document.createElement('article');
 providerPanel.className='panel wide';
-providerPanel.innerHTML=`<div class="panel-head"><div><span class="eyebrow">YAPAY ZEKÂ SAĞLAYICILARI</span><h3>AI API ayarları</h3><p>Windows hesabına özel şifreli kasada saklanır. Yeni kayıtlarda ek kasa parolası gerekmez.</p></div></div><label>Sağlayıcı<select id="ai-provider"><option value="openai">OpenAI API (ChatGPT modelleri)</option><option value="ollama_cloud">Ollama Cloud</option><option value="anthropic">Claude / Anthropic</option><option value="gemini">Google Gemini</option><option value="deepseek">DeepSeek</option></select></label><label>Model adı<input id="ai-provider-model" type="text" maxlength="100" autocomplete="off" placeholder="Sağlayıcının API model adı"></label><label>API anahtarı<input id="ai-provider-key" type="password" maxlength="512" autocomplete="new-password" placeholder="API anahtarı"></label><div class="button-row"><button id="ai-provider-save">Kaydet</button><button id="ai-provider-replace">Değiştir</button><button id="ai-provider-delete">Sil</button><button id="ai-provider-migrate">Eski kasayı aktar</button><button id="ai-provider-analyze">Bu sağlayıcıyla analiz et</button></div><p id="ai-provider-state" role="status">Önce yerel motora bağlanın.</p><p class="disclaimer">Yerel Ollama için API anahtarı gerekmez. Bulut analizinde seçili sağlayıcıya yalnızca kamuya açık piyasa verileri gönderilir; beş model isteği API ücreti doğurabilir. ChatGPT aboneliği API kredisi anlamına gelmez. Haber ve risk doğrulanmadığında sonuç BEKLE olur.</p>`;
+providerPanel.innerHTML=`<div class="panel-head"><div><span class="eyebrow">YAPAY ZEKÂ SAĞLAYICILARI</span><h3>AI API ayarları</h3><p>Windows hesabına özel şifreli kasada saklanır. Yeni kayıtlarda ek kasa parolası gerekmez.</p></div></div><label>Sağlayıcı<select id="ai-provider"><option value="openai">OpenAI API (ChatGPT modelleri)</option><option value="ollama_cloud">Ollama Cloud</option><option value="anthropic">Claude / Anthropic</option><option value="gemini">Google Gemini</option><option value="deepseek">DeepSeek</option></select></label><label>Model adı<input id="ai-provider-model" type="text" maxlength="100" autocomplete="off" placeholder="Sağlayıcının API model adı"></label><label>API anahtarı<input id="ai-provider-key" type="password" maxlength="512" autocomplete="new-password" placeholder="API anahtarı"></label><div class="button-row"><button id="ai-provider-save">Kaydet</button><button id="ai-provider-replace">Değiştir</button><button id="ai-provider-delete">Sil</button><button id="ai-provider-migrate">Eski kasayı aktar</button><button id="ai-provider-verify">API bağlantısını doğrula (ücretsiz metadata)</button><button id="ai-provider-analyze">Bu sağlayıcıyla analiz et</button></div><p id="ai-provider-state" role="status">Önce yerel motora bağlanın.</p><p class="disclaimer">Yerel Ollama için API anahtarı gerekmez. Bulut analizinde seçili sağlayıcıya yalnızca kamuya açık piyasa verileri gönderilir; beş model isteği API ücreti doğurabilir. ChatGPT aboneliği API kredisi anlamına gelmez. Haber ve risk doğrulanmadığında sonuç BEKLE olur.</p>`;
 $('#view-settings .grid').append(providerPanel);
 let providerStates=[];
 function selectedProvider(){return $('#ai-provider').value;}
@@ -312,6 +312,23 @@ $('#ai-provider-migrate').addEventListener('click',async()=>{
   clearProviderSecrets();
   try{await api('/api/ai/providers/migrate',{provider,passphrase});await loadAIProviders();text('#ai-provider-state','Eski anahtar güvenli Windows kasasına aktarıldı. Eski şifreli dosya korunuyor.');}
   catch{text('#ai-provider-state','Aktarım başarısız. Eski parola veya Windows anahtar saklama iznini kontrol edin.');}
+});
+$('#ai-provider-verify').addEventListener('click',async()=>{
+  const provider=selectedProvider();
+  if(!['openai','gemini'].includes(provider)){
+    text('#ai-provider-state','Bağlantı kontrolü şu anda yalnız OpenAI ve Gemini için destekleniyor.');return;
+  }
+  clearProviderSecrets();
+  text('#ai-provider-state','Kayıtlı anahtarla sağlayıcı kontrol ediliyor…');
+  try{
+    const result=await api('/api/ai/providers/verify',{provider});
+    const messages={API_OK:'Bağlantı doğrulandı.',AUTH_REJECTED:'API anahtarı reddedildi.',
+      ACCESS_DENIED:'Sağlayıcı erişimi reddetti.',MODEL_UNAVAILABLE:'Model bulunamadı veya yetki yok.',
+      RATE_LIMITED:'İstek sınırı aşıldı.',TIMEOUT:'Bağlantı zaman aşımı.',
+      NETWORK_ERROR:'Ağ veya sağlayıcı bağlantısı kurulamadı.',PROVIDER_UNAVAILABLE:'Sağlayıcı şu anda kullanılamıyor.'};
+    text('#ai-provider-state',provider.toUpperCase()+': '+(messages[result.status]||'Bağlantı doğrulanamadı.')+
+      ' · '+(result.verified?'Doğrulanmış API erişimi':'Güvenli durum: BEKLE'));
+  }catch{text('#ai-provider-state','API bağlantısı doğrulanamadı. Güvenli durum: BEKLE.');}
 });
 $('#ai-provider-analyze').addEventListener('click',async()=>{const provider=selectedProvider();clearProviderSecrets();if(!confirm('Seçili sağlayıcıya herkese açık piyasa verileri gönderilecek ve API ücreti oluşabilir. Analiz başlatılsın mı?'))return;text('#ai-provider-state','Analiz yapılıyor…');try{const result=await api('/api/ai/providers/analyze',{provider,symbol:pair,consent:true});showAI(result);text('#ai-provider-state','Analiz tamamlandı; nihai güvenlik sonucu ve gerekçeyi kontrol edin.');navigate('decisions');await refreshAIHistory();}catch{text('#ai-provider-state','Analiz başlatılamadı. Önce piyasa verisini, API hesabını ve model seçimini kontrol edin.');}});
 if(webMode){for(const el of providerPanel.querySelectorAll('input,select,button'))el.disabled=true;text('#ai-provider-state','AI API ayarları yalnızca yerel bilgisayarda kullanılabilir.');}
