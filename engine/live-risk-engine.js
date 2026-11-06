@@ -60,7 +60,7 @@ export class LiveRiskEngine{
     p.priceTime>now||now-p.priceTime>this.#limits.maxQuoteAgeMs)throw Error('RISK_DATA_UNAVAILABLE');
    assets.add(p.asset);
   }
-  if(!validDecimal(context.totalExposureTry)||!signedDecimal(context.dayRealizedPnlTry)||
+  if(!validDecimal(context.totalExposureTry)||!signedDecimal(context.dayRealizedPnlTry)||!signedDecimal(context.dayNetPnlTry)||
    !safeInt(context.dayTradeCount)||!Number.isSafeInteger(context.dayStartAt)||!sameDay(context.dayStartAt,now)||
    !bps(context.feeBps,this.#limits.maxFeeBps)||!bps(context.spreadBps,this.#limits.maxSpreadBps)||
    !bps(context.slippageBps,this.#limits.maxSlippageBps)||
@@ -73,7 +73,9 @@ export class LiveRiskEngine{
    if(cost>0&&value<cost*(1-this.#limits.stopLossBps/10000))throw Error('STOP_LOSS_TRIGGERED');
   }
   if(compareDecimal(context.totalExposureTry,this.#limits.maxTotalExposureTry)>0)throw Error('TOTAL_EXPOSURE_LIMIT');
-  if(context.dayRealizedPnlTry.startsWith('-')&&compareDecimal(context.dayRealizedPnlTry.slice(1),this.#limits.maxDailyLossTry)>=0)throw Error('DAILY_LOSS_LIMIT');
+  if([context.dayRealizedPnlTry,context.dayNetPnlTry].some(pnl=>
+    pnl.startsWith('-')&&compareDecimal(pnl.slice(1),this.#limits.maxDailyLossTry)>=0))
+   throw Error('DAILY_LOSS_LIMIT');
   if(context.dayTradeCount>=this.#limits.maxDailyOrders)throw Error('DAILY_TRADE_COUNT');
   return context;
  }
@@ -115,6 +117,7 @@ export class LiveRiskEngine{
    // Reserve atomically with local journal entry; holds remain across timeouts.
    return this.#journal.reserve(order,this.#clock(),()=>{
     if(this.status().halted)throw Error('HALTED');
+    this.#verify(context);
     // Count all submitted attempts, including unknown/cancelled, to avoid rate-limit bypass.
     const date=new Date(this.#clock()).toISOString().slice(0,10);
     const count=this.#journal.db.prepare('SELECT count(*) AS n FROM live_orders WHERE created_at>=? AND created_at<?').get(Date.parse(date+'T00:00:00Z'),Date.parse(date+'T00:00:00Z')+86400000).n;
