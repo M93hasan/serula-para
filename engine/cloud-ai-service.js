@@ -4,10 +4,10 @@ import {AIAnalyst} from './ai-analyst.js';
 export class CloudAIService {
   #vault;#fetch;#busy=false;#clock;#nextAllowed=0;
   constructor({vault,fetchImpl=fetch,clock=Date.now}){this.#vault=vault;this.#fetch=fetchImpl;this.#clock=clock;}
-  async analyze({provider,passphrase,snapshot}){
+  async analyze({provider,passphrase,principal,snapshot}){
     if(this.#busy)throw Error('BUSY');if(this.#clock()<this.#nextAllowed)throw Error('RATE_LIMIT');this.#nextAllowed=this.#clock()+30000;this.#busy=true;let secret=null;
     try{
-      secret=this.#vault.openForAnalysis({provider,passphrase});
+      secret=this.#vault.openForAnalysis({provider,passphrase,principal});
       const {apiKey,model}=secret;
       if(!/^[A-Za-z0-9_.:-]{1,100}$/.test(model))throw Error('MODEL_REQUIRED');
       const transport=async(url,options)=>{
