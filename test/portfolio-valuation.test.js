@@ -7,7 +7,7 @@ const now=1700000000000;
 const quote=(symbol,price,priceTime=now)=>({symbol,price,priceTime});
 test('portfolio includes available and locked TRY plus directly priced crypto',()=>{
   const result=valuePortfolio([{asset:'TRY',free:'20',locked:'30'},{asset:'BTC',free:'0.1',locked:'0.05'},{asset:'ETH',free:'2',locked:'0'}],[quote('BTC_TRY',4000000),quote('ETH_TRY',100000)],now);
-  assert.equal(result.subtotal,800050);
+  assert.ok(Math.abs(result.subtotal-800050)<0.000001);
   assert.deepEqual(result.missing,[]);
   assert.equal(result.complete,true);
 });
