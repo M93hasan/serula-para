@@ -391,6 +391,7 @@ $('#ai-measure').addEventListener('click',async()=>{try{const r=await api('/api/
 $('#ai-run').addEventListener('click',async()=>{const btn=$('#ai-run');btn.disabled=true;text('#ai-status','Yerel model çalışıyor…');try{const result=await api('/api/ai/analyze',{symbol:pair});showAI(result);await refreshAIHistory();text('#ai-status',result.errorCode?result.reason+' ('+result.errorCode+')':'AI araştırma analizi tamamlandı; güvenlik kararı BEKLE.');}catch{text('#ai-status','AI servisi kullanılamıyor; karar BEKLE.');}finally{btn.disabled=!token;}});
 
 if(webMode){
+  void chooseLaunchMode({currentMode:'web'});
   // Web and local engine are different trust boundaries. Google web login never unlocks a local vault.
   $('#local-login').hidden=true;
   googleBox.hidden=true;
