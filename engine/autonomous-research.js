@@ -49,7 +49,7 @@ export class AutonomousResearch {
       ranked.sort((a,b)=>a.symbol.localeCompare(b.symbol));
       const candidate=ranked[0];
       const risk=candidate.indicators?.movementRisk;
-      if(risk&&risk.safe!==true)throw Error('VOLATILITY_RISK');
+      if(risk?.safe!==true)throw Error('VOLATILITY_RISK');
       if(!this.#news)throw Error('NEWS_UNAVAILABLE');
       const briefing=await this.#news.latest();
       if(!briefing?.verified||!Array.isArray(briefing.articles)||!briefing.articles.length)throw Error('NEWS_UNAVAILABLE');
