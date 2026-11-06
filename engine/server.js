@@ -25,7 +25,7 @@ import { scannerPaperMarks } from './paper-marks.js';
 import { ManualOrderApproval } from './manual-order-approval.js';
 import { checkLiveOrderPreflight } from './live-order-preflight.js';
 
-export function createServer({ token, simulator, paper = null, account = null, aiProviders = null, cloudAIService = null, market = new MarketData(), universe = new MarketUniverse(), scanner = new MarketScanner({universe}), ai = new AIAnalyst(), accountHistory = null, autoScan = false, googleAuth = null, distDir = resolve('dist'),riskIntervalMs=5000 }) {
+export function createServer({ token, simulator, paper = null, account = null, aiProviders = null, cloudAIService = null, market = new MarketData(), universe = new MarketUniverse(), scanner = new MarketScanner({universe}), ai = new AIAnalyst(), accountHistory = null, orderJournal = null, autoScan = false, googleAuth = null, distDir = resolve('dist'),riskIntervalMs=5000 }) {
   if (typeof token !== 'string' || Buffer.byteLength(token) < 32) throw new Error('Set a random token of at least 32 bytes');
   const expected = Buffer.from(`Bearer ${token}`);
   const localGoogle=googleAuth||createLocalGoogleAuth();
@@ -143,11 +143,18 @@ export function createServer({ token, simulator, paper = null, account = null, a
         }else {
           if(!payload||typeof payload!=='object'||Array.isArray(payload)||
              Object.keys(payload).sort().join(',')!=='confirmation,digest,id')throw Error('INVALID_APPROVAL');
-          result=manualApproval.approve(payload);
+          if(!orderJournal)throw Error('JOURNAL_UNAVAILABLE');
+          const approved=manualApproval.approve(payload);
+          const saved=orderJournal.reserve({
+            idempotencyKey:approved.approvalId,
+            order:{symbol:approved.symbol,side:approved.side,price:approved.price,quantity:approved.quantity}
+          });
+          result={...approved,intentId:saved.intentId,clientOrderId:saved.clientOrderId,
+            journalStatus:saved.status,executionEnabled:false};
         }
         return res.end(JSON.stringify(result));
       }catch(error){
-        const allowed=['INVALID_ORDER','INVALID_APPROVAL','APPROVAL_UNAVAILABLE','APPROVAL_REJECTED','ORDER_LIMIT','ACCOUNT_NOT_CONFIGURED','MARKET_NOT_READY','EXCHANGE_READ_FAILED','VAULT_UNLOCK_FAILED'];
+        const allowed=['INVALID_ORDER','INVALID_APPROVAL','APPROVAL_UNAVAILABLE','APPROVAL_REJECTED','ORDER_LIMIT','ACCOUNT_NOT_CONFIGURED','MARKET_NOT_READY','EXCHANGE_READ_FAILED','VAULT_UNLOCK_FAILED','JOURNAL_UNAVAILABLE','DUPLICATE_INTENT','IDEMPOTENCY_CONFLICT'];
         const failure=allowed.includes(error.message)?error.message:error.message.startsWith('PREFLIGHT_')?error.message:'PREVIEW_UNAVAILABLE';
         return res.writeHead(error.message==='APPROVAL_UNAVAILABLE'||error.message==='APPROVAL_REJECTED'?409:400)
           .end(JSON.stringify({error:failure}));
