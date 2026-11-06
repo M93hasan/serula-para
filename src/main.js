@@ -1,6 +1,7 @@
 import './style.css';
 import { createChart, CandlestickSeries, AreaSeries } from 'lightweight-charts';
 import { valuePortfolio } from './portfolio.js';
+import { prepareBalances, displayQuantity } from './balance-view.js';
 const app=document.querySelector('#app');
 app.innerHTML=`<div class="shell"><aside class="sidebar"><div class="brand"><div class="brandmark">P</div><div><strong>PARA</strong><small>TRADING TERMINAL</small></div></div><div class="navlabel">ÇALIŞMA ALANI</div><nav aria-label="Ana menü"><button class="nav active" data-view="overview"><span>◫</span> Genel Bakış</button><button class="nav" data-view="markets"><span>⌁</span> Piyasalar</button><button class="nav" data-view="decisions"><span>✳</span> AI Kararları</button><button class="nav" data-view="simulation"><span>◉</span> Simülasyon</button><button class="nav" data-view="history"><span>≡</span> İşlem Geçmişi</button><button class="nav" data-view="settings"><span>⚙</span> Ayarlar</button></nav><div class="aside-foot"><span class="dot amber"></span><div><strong>Güvenli mod</strong><small>Gerçek emirler kapalı</small></div></div></aside><main class="main"><header class="topbar"><div><span class="eyebrow">KİŞİSEL TRADING ALANI</span><h1 id="page-title">Genel Bakış</h1></div><div class="top-actions"><button id="command-launch" class="command-launch" type="button" aria-haspopup="dialog" aria-controls="command-overlay" title="Komut menüsü (Ctrl+K)">⌕ Komut <kbd>Ctrl K</kbd></button><span class="status-pill"><i class="dot amber"></i> YEREL MOD</span><button data-goto="settings">⚙ Bağlan</button><button id="local-halt" class="danger" disabled>■ <span>Acil durdur</span></button></div></header>
 <div class="terminal-ticker" role="status" aria-label="Terminal durum çubuğu"><span class="terminal-tag">● PARA / TERM</span><span class="terminal-separator">│</span><span>PAZAR <strong>BINANCE TR</strong></span><span class="terminal-separator">│</span><span>VERİ <strong>BAĞLANTI GEREKLİ</strong></span><span class="terminal-separator">│</span><span>EMİR <strong>DEVRE DIŞI</strong></span><button id="workspace-toggle" class="workbench-control" type="button" aria-pressed="false">⛶ Grafik odak</button></div>
@@ -155,9 +156,9 @@ async function refreshAccountHistory(){
 $('#account-history-refresh').addEventListener('click',()=>refreshAccountHistory());
 
 function renderPortfolio(){const list=$('#assets-list');list.replaceChildren();text('#portfolio-total','—');text('#portfolio-btc','—');if(!balances){text('#portfolio-label','Toplam portföy');list.textContent='Bağlantı testinden sonra gösterilir.';text('#portfolio-note','Hesap bağlanmadı');return;}
- const nonzero=balances.filter(x=>Number(x.free)>0||Number(x.locked)>0);if(!nonzero.length)list.textContent='Sıfırdan büyük varlık bulunamadı.';for(const b of nonzero){const row=document.createElement('div');row.className='asset';const name=document.createElement('strong');name.textContent=b.asset;const amount=document.createElement('span');amount.textContent=`${b.free} kullanılabilir · ${b.locked} kilitli`;
+ let nonzero;try{nonzero=prepareBalances(balances);}catch{list.textContent='Bakiye biçimi doğrulanamadı.';text('#portfolio-note','Hesap bakiyesi doğrulanamadı.');return;}if(!nonzero.length)list.textContent='Sıfırdan büyük varlık bulunamadı.';for(const b of nonzero){const row=document.createElement('div');row.className='asset';const name=document.createElement('strong');name.textContent=b.asset;const amount=document.createElement('span');amount.textContent=`Kullanılabilir: ${displayQuantity(b.free)} · Kilitli: ${displayQuantity(b.locked)} · Toplam: ${displayQuantity(b.total)}`;
   if(b.asset==='BNB'){const ticker=snapshot?.markets?.find(m=>m.symbol==='BNB_TRY'),now=Date.now();const fresh=ticker&&Number.isFinite(ticker.price)&&ticker.price>0&&Number.isSafeInteger(ticker.priceTime)&&ticker.priceTime<=now&&now-ticker.priceTime<=30000;
-    const tryValue=fresh?(Number(b.free)+Number(b.locked))*ticker.price:null;
+    const tryValue=fresh?Number(b.total)*ticker.price:null;
     amount.textContent+=Number.isFinite(tryValue)?` · ≈ ₺${fmt(tryValue)}`:' · TRY fiyatı güncel değil';
   }
   row.append(name,amount);list.append(row);}
@@ -330,11 +331,12 @@ if(webMode){
   function renderWebBalances(items){
     webBalances.replaceChildren();
     const heading=document.createElement('h4');heading.textContent='Sıfır olmayan bakiyeler';webBalances.append(heading);
-    if(!items.length){const empty=document.createElement('p');empty.textContent='Hesapta sıfırdan büyük bakiye bulunamadı.';webBalances.append(empty);return;}
+    const rows=prepareBalances(items);
+    if(!rows.length){const empty=document.createElement('p');empty.textContent='Hesapta sıfırdan büyük bakiye bulunamadı.';webBalances.append(empty);return;}
     const table=document.createElement('table');
-    const head=document.createElement('thead');head.innerHTML='<tr><th>Varlık</th><th>Kullanılabilir</th><th>Kilitli</th></tr>';table.append(head);
+    const head=document.createElement('thead');head.innerHTML='<tr><th>Varlık</th><th>Kullanılabilir</th><th>Kilitli</th><th>Toplam</th></tr>';table.append(head);
     const body=document.createElement('tbody');
-    for(const item of items){const row=document.createElement('tr');for(const value of [item.asset,item.free,item.locked]){const cell=document.createElement('td');cell.textContent=value;row.append(cell);}body.append(row);}
+    for(const item of rows){const row=document.createElement('tr');for(const value of [item.asset,displayQuantity(item.free),displayQuantity(item.locked),displayQuantity(item.total)]){const cell=document.createElement('td');cell.textContent=value;row.append(cell);}body.append(row);}
     table.append(body);webBalances.append(table);
   }
   async function fetchWebBalances(credentials){
