@@ -19,14 +19,14 @@ const safeInt=x=>Number.isSafeInteger(x)&&x>=0;
 const bps=(value,limit)=>Number.isFinite(value)&&value>=0&&value<=limit;
 const sameDay=(time,now)=>new Date(time).toISOString().slice(0,10)===new Date(now).toISOString().slice(0,10);
 export class LiveRiskEngine{
- #journal;#limits;#clock;#approval;
- constructor({journal,limits=DEFAULT_LIVE_RISK_LIMITS,clock=Date.now,approval=()=>false}={}){
-  if(!journal?.db||typeof clock!=='function'||typeof approval!=='function')throw Error('INVALID_RISK_ENGINE');
+ #journal;#limits;#clock;#approval;#healthProvider;#timer=null;#checking=false;#watchdogIntervalMs;
+ constructor({journal,limits=DEFAULT_LIVE_RISK_LIMITS,clock=Date.now,approval=()=>false,healthProvider=null,watchdogIntervalMs=5000}={}){
+  if(!journal?.db||typeof clock!=='function'||typeof approval!=='function'||healthProvider!==null&&typeof healthProvider!=='function'||!Number.isSafeInteger(watchdogIntervalMs)||watchdogIntervalMs<1000||watchdogIntervalMs>30000)throw Error('INVALID_RISK_ENGINE');
   for(const name of ['maxOrderTry','maxDailyLossTry','maxTotalExposureTry','maxAssetExposureTry'])
    if(!validDecimal(limits[name])||compareDecimal(limits[name],'0')<=0)throw Error('INVALID_RISK_LIMITS');
   for(const name of ['maxDailyOrders','maxFeeBps','maxSpreadBps','maxSlippageBps','maxVolatilityBps','stopLossBps','maxQuoteAgeMs','maxRiskStateAgeMs'])
    if(!safeInt(limits[name])||limits[name]===0)throw Error('INVALID_RISK_LIMITS');
-  this.#journal=journal;this.#limits=Object.freeze({...limits});this.#clock=clock;this.#approval=approval;
+  this.#journal=journal;this.#limits=Object.freeze({...limits});this.#clock=clock;this.#approval=approval;this.#healthProvider=healthProvider;this.#watchdogIntervalMs=watchdogIntervalMs;
   journal.db.exec("CREATE TABLE IF NOT EXISTS live_risk_state (id INTEGER PRIMARY KEY CHECK(id=1), halted INTEGER NOT NULL, reason TEXT NOT NULL, updated_at INTEGER NOT NULL); INSERT OR IGNORE INTO live_risk_state VALUES (1,1,'STARTUP_LOCK',0);");
   // Restart always requires a fresh independent authorization, never resumes trading.
   journal.db.prepare("UPDATE live_risk_state SET halted=1,reason='STARTUP_LOCK',updated_at=? WHERE id=1").run(this.#clock());
@@ -40,10 +40,11 @@ export class LiveRiskEngine{
  }
  arm(context){
   // Independent approval cannot be supplied by order payload or HTTP flags.
-  if(this.#approval({action:'arm'})!==true)throw Error('LIVE_RISK_LOCKED');
+  if(this.#approval({action:'arm'})!==true||!this.#healthProvider)throw Error('LIVE_RISK_LOCKED');
   this.#verify(context);
   if(this.#journal.db.prepare("SELECT 1 FROM live_orders WHERE status IN ('RESERVED','UNKNOWN','SUBMITTED','NEW','PARTIALLY_FILLED','PROCESSING','PENDING_CANCEL','CANCEL_UNKNOWN','CANCEL_REQUESTED') LIMIT 1").get())throw Error('UNRESOLVED_ORDERS');
   this.#journal.db.prepare("UPDATE live_risk_state SET halted=0,reason='OPERATOR_ARMED',updated_at=? WHERE id=1").run(this.#clock());
+  this.#startWatchdog();
   return this.status();
  }
  #verify(context){
@@ -75,6 +76,25 @@ export class LiveRiskEngine{
   if(context.dayRealizedPnlTry.startsWith('-')&&compareDecimal(context.dayRealizedPnlTry.slice(1),this.#limits.maxDailyLossTry)>=0)throw Error('DAILY_LOSS_LIMIT');
   if(context.dayTradeCount>=this.#limits.maxDailyOrders)throw Error('DAILY_TRADE_COUNT');
   return context;
+ }
+ #startWatchdog(){
+  if(this.#timer)return;
+  this.#timer=setInterval(async()=>{
+   if(this.#checking||this.status().halted)return;
+   this.#checking=true;
+   try{this.monitor(await this.#healthProvider());}
+   catch{this.halt('CONNECTION_FAILURE');}
+   finally{this.#checking=false;}
+  },this.#watchdogIntervalMs);
+  this.#timer.unref?.();
+ }
+ close(){if(this.#timer){clearInterval(this.#timer);this.#timer=null;}}
+ // Exit advice is informational; HALT never creates an unapproved market sell.
+ exitPlan(context){
+  const positions=Array.isArray(context?.positions)?context.positions:[];
+  return positions.filter(p=>Number.isFinite(Number(p.costBasisTry))&&Number(p.costBasisTry)>0&&
+    Number.isFinite(Number(p.exposureTry))&&Number(p.exposureTry)<Number(p.costBasisTry)*(1-this.#limits.stopLossBps/10000))
+   .map(p=>({asset:p.asset,action:'CLOSE_REQUIRED',reason:'STOP_LOSS_TRIGGERED',executionAuthorized:false}));
  }
  monitor(context){
   try{this.#verify(context);return this.status();}
