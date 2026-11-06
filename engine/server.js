@@ -22,6 +22,7 @@ import { assessPaperReadiness } from './paper-gate.js';
 import { ollamaStatus } from './ollama-status.js';
 import { createLocalGoogleAuth } from './local-google-auth.js';
 import { scannerPaperMarks } from './paper-marks.js';
+import { MarketEventLog } from './market-event-log.js';
 
 export function createServer({ token, simulator, paper = null, account = null, aiProviders = null, cloudAIService = null, market = new MarketData(), universe = new MarketUniverse(), scanner = new MarketScanner({universe}), ai = new AIAnalyst(), accountHistory = null, autoScan = false, googleAuth = null, distDir = resolve('dist'),riskIntervalMs=5000 }) {
   if (typeof token !== 'string' || Buffer.byteLength(token) < 32) throw new Error('Set a random token of at least 32 bytes');
@@ -31,6 +32,8 @@ export function createServer({ token, simulator, paper = null, account = null, a
   let latestScanDecision=null;
   const cloudAI=cloudAIService||(aiProviders?new CloudAIService({vault:aiProviders}):null);
   const scanAutomation = new ScanAutomation(scanner);
+  const eventLog=new MarketEventLog({path:join(homedir(),'.para','market-events.jsonl')});
+  const logEvent=event=>{try{eventLog.record(event);}catch{/* never interrupt read-only market requests */}};
   const server=http.createServer(async (req, res) => {
     res.setHeader('Cache-Control','no-store'); res.setHeader('X-Content-Type-Options','nosniff');
     res.setHeader('Content-Security-Policy', "default-src 'self'; connect-src 'self'; script-src 'self'; style-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
@@ -99,13 +102,27 @@ export function createServer({ token, simulator, paper = null, account = null, a
       if(!paper)return res.writeHead(503).end('{"error":"paper unavailable"}');
       try{if(req.url.endsWith('/start'))paper.start();else paper.halt();return res.end(JSON.stringify({status:paper.status()}));}catch{return res.writeHead(503).end('{"error":"paper unavailable"}');}
     }
+    if(req.method==='GET'&&req.url==='/api/markets/events'){
+      try{return res.end(JSON.stringify({events:eventLog.recent()}));}
+      catch{return res.writeHead(503).end('{"error":"events unavailable"}');}
+    }
+    if(req.method==='POST'&&req.url==='/api/markets/events'){
+      if(req.headers.origin!==origin||req.headers['sec-fetch-site']!=='same-origin'||req.headers['content-type']!=='application/json'||req.headers['x-para-request']!=='1')return res.writeHead(403).end('{"error":"forbidden"}');
+      try{
+        let body='',size=0;for await(const c of req){size+=c.length;if(size>256)return res.writeHead(413).end('{"error":"too large"}');body+=c.toString('utf8');}
+        const event=JSON.parse(body);
+        if(!event||typeof event!=='object'||Array.isArray(event)||Object.keys(event).some(key=>!['type','source','code'].includes(key)))throw Error('invalid');
+        eventLog.record(event);
+        return res.end('{"ok":true}');
+      }catch{return res.writeHead(400).end('{"error":"invalid event"}');}
+    }
     if(req.method==='GET' && req.url==='/api/markets/overview') {
       try{const data=await market.snapshot();latestMarkets=data.markets;return res.end(JSON.stringify(data));}
-      catch(err){const code=err.message==='Market request in progress or cooldown'?'RATE_LIMIT':err.message==='Stale price'||err.message==='Incomplete or stale candles'?'STALE_DATA':'MARKET_CONNECTION';return res.writeHead(503).end(JSON.stringify({error:code}));}
+      catch(err){const code=err.message==='Market request in progress or cooldown'?'RATE_LIMIT':err.message==='Stale price'||err.message==='Incomplete or stale candles'?'STALE_DATA':'MARKET_CONNECTION';logEvent({type:'API_ERROR',source:'MARKET',code});return res.writeHead(503).end(JSON.stringify({error:code}));}
     }
     if(req.method==='GET' && req.url==='/api/markets/prices') {
       try{return res.end(JSON.stringify(await market.prices()));}
-      catch(err){const code=err.message==='Stale price'?'STALE_DATA':'MARKET_CONNECTION';return res.writeHead(503).end(JSON.stringify({error:code}));}
+      catch(err){const code=err.message==='Stale price'?'STALE_DATA':'MARKET_CONNECTION';logEvent({type:'API_ERROR',source:'MARKET',code});return res.writeHead(503).end(JSON.stringify({error:code}));}
     }
     if(req.method==='GET' && req.url?.startsWith('/api/markets/valuation-prices?')){
       try {
@@ -115,7 +132,7 @@ export function createServer({ token, simulator, paper = null, account = null, a
         if(raw.length>1000)return res.writeHead(400).end('{"error":"INVALID_ASSETS"}');
         const assets=raw?raw.split(','):[];
         return res.end(JSON.stringify({markets:await market.valuationPrices(assets)}));
-      }catch(err){const code=err.message==='Invalid assets'?'INVALID_ASSETS':'MARKET_CONNECTION';return res.writeHead(code==='INVALID_ASSETS'?400:503).end(JSON.stringify({error:code}));}
+      }catch(err){const code=err.message==='Invalid assets'?'INVALID_ASSETS':'MARKET_CONNECTION';if(code==='MARKET_CONNECTION')logEvent({type:'API_ERROR',source:'PORTFOLIO',code});return res.writeHead(code==='INVALID_ASSETS'?400:503).end(JSON.stringify({error:code}));}
     }
     if(req.method==='GET' && req.url==='/api/markets/universe') {try{return res.end(JSON.stringify(await universe.discover()));}catch{return res.writeHead(503).end('{"error":"market catalogue unavailable"}');}}
     if(req.method==='GET' && req.url==='/api/markets/scan/auto')return res.end(JSON.stringify(scanAutomation.status()));
@@ -204,7 +221,7 @@ export function createServer({ token, simulator, paper = null, account = null, a
           }catch{/* Never block the verified read-only account balance response. */}
         }
         return res.end(JSON.stringify({connected:true,balances,valueHistory}));
-      } catch (err) {const allowed=['VAULT_UNLOCK_FAILED','EXCHANGE_READ_FAILED'];const code=allowed.includes(err.message)?err.message:'operation failed';if(!res.headersSent) res.writeHead(400).end(JSON.stringify({error:code}));return;}
+      } catch (err) {const allowed=['VAULT_UNLOCK_FAILED','EXCHANGE_READ_FAILED'];const code=allowed.includes(err.message)?err.message:'operation failed';if(code==='EXCHANGE_READ_FAILED')logEvent({type:'API_ERROR',source:'ACCOUNT',code});if(!res.headersSent) res.writeHead(400).end(JSON.stringify({error:code}));return;}
     }
     res.writeHead(404).end('{"error":"not found"}');
   });
