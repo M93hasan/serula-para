@@ -21,7 +21,13 @@ try {
   const {AccountSnapshotStore}=await import('../engine/account-snapshot-store.js');
   const {createServer}=await import('../engine/server.js');
   const {createLocalGoogleAuth}=await import('../engine/local-google-auth.js');
+  const {verifyLocalData,cleanExpiredDebugLogs}=await import('../engine/local-preflight.js');
   const dir=process.env.PARA_DATA_DIR ? resolve(process.env.PARA_DATA_DIR) : join(homedir(),'.para'), token=randomBytes(32).toString('hex');
+  // Read-only integrity check before any existing database is opened for mutation.
+  const preflight=verifyLocalData(dir);
+  console.log('SQLite: '+preflight.sqlite.map(x=>x.name+'='+x.status).join(', '));
+  console.log('Sifreli kasa: '+preflight.vaults.map(x=>x.status).join(', '));
+  console.log('Eski tanilama loglari temizlendi: '+cleanExpiredDebugLogs(dir));
   const sim=new RiskStore(join(dir,'simulation.sqlite'),{budget:100000,maxTrade:10000,maxLoss:5000});
   const paper=new PaperStore(join(dir,'paper.sqlite'),{feeBps:10,slippageBps:10,quotes:[{asset:'TRY',budget:100000,maxTrade:10000,maxExposure:50000,maxAsset:10000,maxLoss:5000}]});
   const accountHistory=new AccountSnapshotStore(join(dir,'account-observations.sqlite'));
@@ -40,5 +46,18 @@ try {
     console.log('Gercek emirler kapali. Durdurmak icin Ctrl+C.\n');
     if(process.platform==='win32'){const browser=spawn('rundll32.exe',['url.dll,FileProtocolHandler','http://127.0.0.1:8788'],{detached:true,stdio:'ignore'});browser.on('error',()=>console.error('Tarayici otomatik acilamadi; yukaridaki adresi elle acin.'));browser.unref();}
   });
-  const stop=()=>server.close(()=>{sim.close();paper.close();accountHistory.close();process.exit(0);});process.on('SIGINT',stop);process.on('SIGTERM',stop);
+  const maintenance=setInterval(()=>{try{cleanExpiredDebugLogs(dir);}catch{console.error('Tanilama log temizligi basarisiz.');}},24*3600000);
+  maintenance.unref();
+  let stopping=false;
+  const stop=()=>{
+    if(stopping)return;
+    stopping=true;
+    clearInterval(maintenance);
+    // Never delete SQLite -wal/-shm: SQLite checkpoints them when closing.
+    server.close(()=>{
+      try{sim.close();paper.close();accountHistory.close();}
+      finally{process.exit(0);}
+    });
+  };
+  process.on('SIGINT',stop);process.on('SIGTERM',stop);
 } catch(error){console.error(`Kurulum veya baslatma hatasi: ${error.message}`);process.exitCode=1;}
