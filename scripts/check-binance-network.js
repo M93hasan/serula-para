@@ -1,3 +1,4 @@
+import { pathToFileURL } from 'node:url';
 // Windows/local network diagnostic. Never sends or reads API keys, cookies or balance details.
 const URLS=Object.freeze([
   'https://www.binance.tr/open/v1/common/time',
@@ -33,7 +34,7 @@ export function formatNetworkResults(results){
   else lines.push('SONUC: Genel API baglantisi dogrulanamadi. Ag, saat, guvenlik duvari ve Binance TR durumunu kontrol edin.');
   return lines.join('\n');
 }
-if(process.argv[1]&&import.meta.url===new URL('file://'+process.argv[1].replaceAll('\\','/')).href){
+if(process.argv[1]&&import.meta.url===pathToFileURL(process.argv[1]).href){
   const output=await checkBinanceNetwork();
   console.log(formatNetworkResults(output));
   if(output.some(x=>x.state!=='OK'))process.exitCode=1;
