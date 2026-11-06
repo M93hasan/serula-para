@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { RiskStore } from '../engine/store.js';
 import { AccountSnapshotStore } from '../engine/account-snapshot-store.js';
+import { PaperStore } from '../engine/paper-store.js';
 import { seal } from '../engine/vault.js';
 import { verifyLocalData, cleanExpiredDebugLogs } from '../engine/local-preflight.js';
 
@@ -33,6 +34,19 @@ test('restart preserves simulated loss journal and restarts halted',()=>withDir(
   assert.ok(state.journal.some(x=>x.type==='simulated'));
   assert.equal(verifyLocalData(dir).sqlite.find(x=>x.name==='simulation.sqlite').status,'OK');
  }finally{db.close();}
+}));
+test('paper journal survives a restart while paper mode returns to HALT',()=>withDir(dir=>{
+ const path=join(dir,'paper.sqlite');
+ const limits={feeBps:10,slippageBps:10,quotes:[{asset:'TRY',budget:1000,maxTrade:100,maxExposure:500,maxAsset:100,maxLoss:100}]};
+ let paper=new PaperStore(path,limits);paper.start();paper.close();
+ paper=new PaperStore(path,limits);
+ try{
+  assert.equal(paper.status().halted,true);
+  const entries=paper.history();
+  assert.ok(entries.some(x=>x.kind==='start'));
+  assert.ok(entries.some(x=>x.kind==='halt'));
+  assert.equal(verifyLocalData(dir).sqlite.find(x=>x.name==='paper.sqlite').status,'OK');
+ }finally{paper.close();}
 }));
 test('startup blocks corrupted encrypted vault and never removes it',()=>withDir(dir=>{
  const path=join(dir,'binance-tr.vault');
