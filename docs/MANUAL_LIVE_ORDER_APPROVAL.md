@@ -42,3 +42,11 @@ Yeni test: `node --test test/live-order-preflight.test.js`.
 - Simülasyon SQLite durumu her açılışta HALT ile başladığından, manuel **önizleme** için ayrı, sadece bellekte tutulan kapalı/açık durumu kullanılmaktadır. Yerel `/halt` çağrısı mevcut onayı iptal eder ve bu süreçte yeni taslakları bloke eder. Yeniden açmak için yerel sunucu yeniden başlatılmalıdır. Bu tasarım gerçek emir HALT mekanizması değildir.
 - Komisyon dahil bakiye, borsa yanında gerçekleşme garantisi, order ID uzlaştırma, risk limiti ve bot yetkileri eksiktir. **Gerçek emirler kalıcı olarak kapalıdır.**
 - Test kodunda 1 ek preflight testi (3 olumsuz alt durum), 3 ek HTTP reddetme durumu ve acil HALT senaryosu bulunur; testler çalıştırılıp doğrulanmadı.
+
+## Kalıcı emir niyeti kaydı — 6 Kasım 2026
+- `engine/order-intent-journal.js`: SQLite (`journal_mode=WAL`, `synchronous=FULL`) ile benzersiz idempotency key ve client order ID tutar. Aynı anahtar farklı içerikle kullanılırsa çatışma; aynı içerikle tekrar kullanılırsa mükerrer giriş hatası döner. Yeniden başlatmak önceki kayıtları silmez.
+- Windows yerel `scripts/start-local.js` başlatılırken `%USERPROFILE%\\.para\\manual-order-intents.sqlite` açılır. `PARA_DATA_DIR` ayarlanmışsa o klasör kullanılır. Kaydın açılamaması başlatmayı başarısız kılar.
+- Manuel `approve` ucu onayı tüketir, sonra `RESERVED` kayıt oluşturur. Başarılı yanıtta `intentId`, `clientOrderId`, `journalStatus: RESERVED` ve `executionEnabled: false` bulunur. Kayıt veritabanına yazılamazsa API başarısız olur, hiçbir emir gönderilmez. Başlatıcı bu veritabanını sağlamazsa `JOURNAL_UNAVAILABLE` döner.
+- `markUnknown()` yalnızca belirsiz durumu kayda alır; hiçbir otomatik yeniden gönderim yoktur. `recordReconciliation()` yalnızca *dışarıdan sağlanan* emir kimliğini saklayan bir yer tutucudur. **Binance TR ile emir sorgulaması, imzalı hesap doğrulaması veya gerçek uzlaştırma yapılmaz.** Bu fonksiyon doğrulanmamış kimlikle canlı akışa bağlanmamalıdır. Hiçbir durum idempotency kaydını tekrar kullanıma açmaz.
+- Bu kayıtlar yalnızca *onay provasıdır*: kaydedilmiş niyet, gönderilmiş veya gerçekleşmiş işlem anlamına gelmez. Emir gönderen hiçbir fonksiyon ve işlem izinli API anahtarı yoktur.
+- Bağımsız Node.js 22.16.0 doğrulaması: `node --test test/order-intent-journal.test.js` **5/5 başarılı**. Tüm repo testleri, Vite build ve Windows E2E henüz doğrulanmadı.
