@@ -24,7 +24,7 @@ test('Binance DPAPI vault opens after restart without password, never exposes pl
   assert.deepEqual(await restarted.balance(),[{asset:'TRY',free:'20',locked:'1'}]);
   assert.deepEqual(observed,{apiKey:'readonly-key',secretKey:'readonly-secret'});
   assert.throws(()=>restarted.save({apiKey:'new',secretKey:'new',replace:false}),/Vault state changed/);
-  assert.throws(()=>restarted.balance('hidden-password'),/INVALID_INPUT/);
+  await assert.rejects(restarted.balance('hidden-password'),/INVALID_INPUT/);
   restarted.remove();assert.equal(restarted.exists(),false);
 });
 test('Legacy Binance vault migrates explicitly and original remains intact',t=>{
