@@ -99,6 +99,14 @@ export function createServer({ token, simulator, paper = null, account = null, a
       if(!paper)return res.writeHead(503).end('{"error":"paper unavailable"}');
       try{if(req.url.endsWith('/start'))paper.start();else paper.halt();return res.end(JSON.stringify({status:paper.status()}));}catch{return res.writeHead(503).end('{"error":"paper unavailable"}');}
     }
+    if(req.method==='GET' && req.url==='/api/markets/overview') {
+      try{const data=await market.snapshot();latestMarkets=data.markets;return res.end(JSON.stringify(data));}
+      catch(err){const code=err.message==='Market request in progress or cooldown'?'RATE_LIMIT':err.message==='Stale price'||err.message==='Incomplete or stale candles'?'STALE_DATA':'MARKET_CONNECTION';return res.writeHead(503).end(JSON.stringify({error:code}));}
+    }
+    if(req.method==='GET' && req.url==='/api/markets/prices') {
+      try{return res.end(JSON.stringify(await market.prices()));}
+      catch(err){const code=err.message==='Stale price'?'STALE_DATA':'MARKET_CONNECTION';return res.writeHead(503).end(JSON.stringify({error:code}));}
+    }
     if(req.method==='GET' && req.url==='/api/markets/universe') {try{return res.end(JSON.stringify(await universe.discover()));}catch{return res.writeHead(503).end('{"error":"market catalogue unavailable"}');}}
     if(req.method==='GET' && req.url==='/api/markets/scan/auto')return res.end(JSON.stringify(scanAutomation.status()));
     if(req.method==='POST' && req.url==='/api/markets/scan/auto') {
