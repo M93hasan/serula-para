@@ -2,12 +2,14 @@ import {createHmac} from 'node:crypto';
 // Binance TR signed order endpoints ONLY. No withdraw route or generic signed-path access.
 // Not constructed or exposed by the production server.
 export class BinanceTROrderClient {
-  #fetch;#clock;#keys;
-  constructor({fetchImpl=fetch,clock=Date.now,keys}={}){
+  #fetch;#clock;#keys;#writeApproval;
+  constructor({fetchImpl=fetch,clock=Date.now,keys,writeApproval=()=>false}={}){
     if(typeof keys?.apiKey!=='string'||typeof keys?.secretKey!=='string'||!keys.apiKey||!keys.secretKey)throw Error('KEYS_REQUIRED');
-    this.#keys=keys;this.#fetch=fetchImpl;this.#clock=clock;
+    if(typeof writeApproval!=='function')throw Error('INVALID_APPROVAL');
+    this.#keys=keys;this.#fetch=fetchImpl;this.#clock=clock;this.#writeApproval=writeApproval;
   }
   async #send(method,path,params){
+    if(method==='POST'&&this.#writeApproval({method,path,params})!==true)throw Error('LIVE_ORDERS_DISABLED');
     const query=new URLSearchParams({...params,timestamp:String(this.#clock()),recvWindow:'5000'});
     const signature=createHmac('sha256',this.#keys.secretKey).update(query.toString()).digest('hex');
     query.set('signature',signature);
