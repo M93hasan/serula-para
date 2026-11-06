@@ -60,7 +60,7 @@ export class LiveRiskEngine{
     p.priceTime>now||now-p.priceTime>this.#limits.maxQuoteAgeMs)throw Error('RISK_DATA_UNAVAILABLE');
    assets.add(p.asset);
   }
-  if(!validDecimal(context.totalExposureTry)||!signedDecimal(context.dayRealizedPnlTry)||!signedDecimal(context.dayNetPnlTry)||
+  if(!validDecimal(context.totalExposureTry)||!validDecimal(context.dayFeesTry)||!signedDecimal(context.dayRealizedPnlTry)||!signedDecimal(context.dayNetPnlTry)||
    !safeInt(context.dayTradeCount)||!Number.isSafeInteger(context.dayStartAt)||!sameDay(context.dayStartAt,now)||
    !bps(context.feeBps,this.#limits.maxFeeBps)||!bps(context.spreadBps,this.#limits.maxSpreadBps)||
    !bps(context.slippageBps,this.#limits.maxSlippageBps)||

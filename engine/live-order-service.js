@@ -5,10 +5,11 @@ import {decide} from './decision.js';
 // Prepared workflow only: no live HTTP route, UI action, scheduler or CLI instantiates it.
 // A separate independent security approval must be added before enabling any send/cancel.
 export class LiveOrderService {
-  #client;#journal;#loadInputs;#gate;#risk;#loadNews;#clock;#scope;
-  constructor({client,journal,loadInputs,gate=()=>false,risk=null,loadNews=null,clock=Date.now,openOrderSymbols=[]}={}){
-    if(!client||!journal||typeof loadInputs!=='function'||typeof gate!=='function'||typeof clock!=='function'||!Array.isArray(openOrderSymbols)||(loadNews!==null&&typeof loadNews!=='function'))throw Error('INVALID_SERVICE');
-    this.#client=client;this.#journal=journal;this.#loadInputs=loadInputs;this.#gate=gate;this.#risk=risk;this.#loadNews=loadNews;this.#clock=clock;this.#scope=[...openOrderSymbols];
+  #client;#journal;#loadInputs;#gate;#risk;#loadNews;#loadDecision;#clock;#scope;
+  constructor({client,journal,loadInputs,gate=()=>false,risk=null,loadNews=null,loadDecision=null,clock=Date.now,openOrderSymbols=[]}={}){
+    if(!client||!journal||typeof loadInputs!=='function'||typeof gate!=='function'||typeof clock!=='function'||!Array.isArray(openOrderSymbols)||
+       (loadNews!==null&&typeof loadNews!=='function')||(loadDecision!==null&&typeof loadDecision!=='function'))throw Error('INVALID_SERVICE');
+    this.#client=client;this.#journal=journal;this.#loadInputs=loadInputs;this.#gate=gate;this.#risk=risk;this.#loadNews=loadNews;this.#loadDecision=loadDecision;this.#clock=clock;this.#scope=[...openOrderSymbols];
   }
   async submit(order){
     if(this.#gate({action:'place',order})!==true)throw Error('LIVE_ORDERS_DISABLED');
@@ -83,7 +84,20 @@ export class LiveOrderService {
          candles.slice(-20).some((c,i,last)=>!Number.isFinite(c?.close)||c.close<=0||
           !Number.isSafeInteger(c.closeTime)||(i>0&&c.closeTime-last[i-1].closeTime!==3_600_000))||
          latest>=now||now-latest>3_600_000)return hold('STALE_SIGNAL');
-      const {action}=decide(symbol,candles);
+      let action;
+      if(this.#loadDecision){
+        let decision;
+        try{decision=await this.#loadDecision({symbol,candles:structuredClone(candles)});}
+        catch{this.#risk.halt('AI_DATA_UNAVAILABLE');return hold('AI_DATA_UNAVAILABLE');}
+        const decisionTime=this.#clock();
+        if(!decision||decision.source!=='verified-ai-decision'||decision.symbol!==symbol||decision.dataComplete!==true||
+           !['AL','SAT','BEKLE'].includes(decision.action)||!Number.isSafeInteger(decision.asOf)||
+           decision.asOf>decisionTime||decisionTime-decision.asOf>15000||!Number.isSafeInteger(decision.expiresAt)||
+           decision.expiresAt<=decisionTime||decision.expiresAt>decisionTime+60000){
+          this.#risk.halt('AI_DATA_UNAVAILABLE');return hold('AI_DATA_UNAVAILABLE');
+        }
+        action=decision.action;
+      }else ({action}=decide(symbol,candles));
       if(action==='BEKLE')return hold('NO_TRADE_SIGNAL');
       const news=(await this.#loadNews?.(symbol))?.evidence;
       const checkedAt=this.#clock();
@@ -101,7 +115,7 @@ export class LiveOrderService {
   }
   // Read-only preflight for an explicit scope. Binance TR requires a symbol on every list request.
   async checkOpenOrders(symbols){
-    if(!Array.isArray(symbols)||!symbols.length||symbols.length>100||
+    if(!Array.isArray(symbols)||!symbols.length||symbols.length>1000||
        symbols.some(symbol=>typeof symbol!=='string'||!/^[A-Z0-9]{1,20}_[A-Z0-9]{1,20}$/.test(symbol))||
        new Set(symbols).size!==symbols.length)throw Error('INVALID_ORDER_SCOPE');
     const scope=[...symbols];
@@ -127,6 +141,24 @@ export class LiveOrderService {
     const results=[];
     for(const clientId of this.#journal.pending())results.push(await this.reconcile(clientId));
     return results;
+  }
+  // HALT itself never writes. This explicit containment path can only request
+  // cancellation through two independent write gates and never liquidates.
+  async containHalt({reason='MANUAL_HALT',symbols=this.#scope}={}){
+    if(!this.#risk)throw Error('LIVE_RISK_NOT_CONFIGURED');
+    this.#risk.halt(reason);
+    let check;
+    try{check=await this.checkOpenOrders(symbols);}
+    catch{return {halted:true,reason,cancelRequested:[],cancelUnknown:[],retained:[],complete:false};}
+    this.#risk.halt(reason);
+    const cancelRequested=[],cancelUnknown=[],retained=[];
+    for(const order of check.openOrders){
+      if(this.#gate({action:'emergency-cancel',order,reason})!==true){retained.push(order);continue;}
+      try{await this.#client.cancelByOrderId(order.orderId);cancelRequested.push(order);}
+      catch{cancelUnknown.push(order);this.#risk.halt('CANCEL_OUTCOME_UNKNOWN');}
+    }
+    return {halted:true,reason:this.#risk.status().reason,cancelRequested,cancelUnknown,retained,
+      complete:check.openOrders.length===0};
   }
   halt(reason='MANUAL_HALT'){if(!this.#risk)throw Error('LIVE_RISK_NOT_CONFIGURED');return this.#risk.halt(reason);}
   get(clientId){return this.#journal.get(clientId);}

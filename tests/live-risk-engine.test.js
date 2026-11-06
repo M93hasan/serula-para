@@ -10,7 +10,7 @@ const now=1800000000000;
 const midnight=Date.parse(new Date(now).toISOString().slice(0,10)+'T00:00:00Z');
 const order=(id='para_risk_0001',notional='100')=>({clientId:id,symbol:'BTC_TRY',side:'BUY',quantity:'0.001',price:'100000',notional});
 const context=()=>({source:'verified-exchange-risk-monitor',connectionHealthy:true,asOf:now,
- dayStartAt:midnight,dayTradeCount:0,dayRealizedPnlTry:'0',dayNetPnlTry:'0',totalExposureTry:'0',
+ dayStartAt:midnight,dayTradeCount:0,dayFeesTry:'0',dayRealizedPnlTry:'0',dayNetPnlTry:'0',totalExposureTry:'0',
  positions:[],feeBps:10,spreadBps:12,slippageBps:10,volatilityBps:90});
 const make=(db,changes={})=>new LiveRiskEngine({journal:db,clock:()=>now,
  approval:()=>true,healthProvider:async()=>context(),...changes});
