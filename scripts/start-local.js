@@ -16,7 +16,7 @@ try {
   console.log('Panel hazirlaniyor...');run(['run','build']);
   const {RiskStore}=await import('../engine/store.js');
   const {PaperStore}=await import('../engine/paper-store.js');
-  const {AIProviderVault}=await import('../engine/ai-provider-vault.js');
+  const {WindowsAIProviderVault}=await import('../engine/windows-ai-provider-vault.js');
   const {AccountService}=await import('../engine/account-service.js');
   const {AccountSnapshotStore}=await import('../engine/account-snapshot-store.js');
   const {createServer}=await import('../engine/server.js');
@@ -31,7 +31,7 @@ try {
     allowedEmail:process.env.GOOGLE_ALLOWED_EMAIL||'',
     allowedSub:process.env.GOOGLE_ALLOWED_SUB||''
   });
-  const server=createServer({token,simulator:sim,paper,aiProviders:new AIProviderVault({directory:join(dir,'ai-providers')}),account:new AccountService({path:join(dir,'binance-tr.vault')}),accountHistory,autoScan:true,googleAuth});
+  const server=createServer({token,simulator:sim,paper,aiProviders:new WindowsAIProviderVault({directory:join(dir,'ai-providers')}),account:new AccountService({path:join(dir,'binance-tr.vault')}),accountHistory,autoScan:true,googleAuth});
   server.on('error',error=>{console.error(error.code==='EADDRINUSE'?'8788 portu kullanimda. Acik PARA penceresini kapatin.':'Yerel sunucu baslatilamadi.');sim.close();paper.close();accountHistory.close();process.exitCode=1;});
   server.listen(8788,'127.0.0.1',()=>{
     console.log('\nPARA yerel panel: http://127.0.0.1:8788');
