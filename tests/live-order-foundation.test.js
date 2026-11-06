@@ -95,3 +95,12 @@ test('fill quantities cannot regress or exceed original order',()=>{
  assert.equal(db.get(order.clientId).executedQty,'0.001');
  db.close();
 });
+
+test('same active order with another clientId is blocked, and no retry is issued',()=>{
+ const db=new LiveOrderJournal(':memory:');
+ db.reserve({...order,notional:'200'});
+ assert.throws(()=>db.reserve({...order,clientId:'para_test_0002',notional:'200'}),/DUPLICATE_ACTIVE_ORDER/);
+ db.observe(order.clientId,remote(2,'0.002'));
+ assert.doesNotThrow(()=>db.reserve({...order,clientId:'para_test_0002',notional:'200'}));
+ db.close();
+});
