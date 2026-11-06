@@ -93,6 +93,67 @@ $('#workspace-toggle').addEventListener('click',()=>{
 document.querySelectorAll('.nav').forEach(x=>x.addEventListener('click',()=>navigate(x.dataset.view)));document.querySelectorAll('[data-goto]').forEach(x=>x.addEventListener('click',()=>navigate(x.dataset.goto)));
 const webMode=location.hostname!=='127.0.0.1'||location.port!=='8788';
 async function api(path,body){if(!token)throw Error('Önce güvenli oturum açın.');let res;try{res=await fetch(path,{method:body?'POST':'GET',headers:{...(!webMode&&token!=='google-session'?{Authorization:`Bearer ${token}`}:{}) ,...(body?{'Content-Type':'application/json','X-Para-Request':'1'}:{})},body:body?JSON.stringify(body):undefined,cache:'no-store'});}catch{throw Error('Yerel motora ulaşılamadı.');}if(!res.ok){const payload=await res.json().catch(()=>({}));const analysisErrors={REGION_RESTRICTED:'Binance TR piyasa verisi bu ağ veya bölgeden erişilemiyor. Kendi bağlantınızda tekrar deneyin.',INVALID_RISK:'Bütçe, işlem limiti, zarar eşiği ve komisyon ayarlarını kontrol edin.',INVALID_SYMBOL:'Seçilen parite desteklenmiyor.',CLOCK_INVALID:'Bilgisayar saatini otomatik eşitleyip tekrar deneyin.',RATE_LIMIT:'Çok sık istek gönderildi. En az 30 saniye bekleyip tekrar deneyin.',STALE_DATA:'Piyasa verisi eski veya eksik; daha sonra tekrar deneyin.',MARKET_UNAVAILABLE:'Bu paritenin Binance TR verisi bulunamadı.',MARKET_CONNECTION:'Binance TR piyasa verisine ulaşılamadı. İnternet bağlantısını kontrol edin.'};if(analysisErrors[payload.error])throw Error(analysisErrors[payload.error]);if(payload.error==='AUTH_REQUIRED')throw Error('Oturum sona erdi. Sayfayı yenileyip tekrar giriş yapın.');if(payload.error==='VAULT_UNLOCK_FAILED')throw Error('Kasa açılamadı. Parolanızı kontrol edin.');if(payload.error==='EXCHANGE_READ_FAILED')throw Error('Binance TR hesabına ulaşılamadı. API okuma iznini, ağ bağlantısını ve bilgisayar saatini kontrol edin.');throw Error(res.status===403?'Erişim reddedildi. Yerel bağlantıyı ve yetkiyi kontrol edin.':res.status===503?'Piyasa verisi alınamadı. Ağ, zaman ayarı veya istek sınırını kontrol edin.':'İşlem başarısız. Kasa parolasını ve API izinlerini kontrol edin.');}return res.json();}
+// Manual order approval rehearsal: strictly local; approval NEVER sends an exchange order.
+if(!webMode){
+  const manualPanel=document.createElement('article');
+  manualPanel.className='panel manual-order-panel';
+  manualPanel.innerHTML=`<span class="eyebrow">MANUEL ONAY · EMİR GÖNDERİMİ KAPALI</span>
+    <h3>İşlem onayı önizlemesi</h3>
+    <p>Bu ekran Binance TR'ye emir göndermez. AL/SAT taslağını ve güvenlik onayını yerelde sınar.</p>
+    <form id="manual-order-form">
+      <label>Parite <input id="manual-symbol" value="BTC_TRY" maxlength="24" autocomplete="off" required></label>
+      <label>İşlem yönü <select id="manual-side"><option value="BUY">AL</option><option value="SELL">SAT</option></select></label>
+      <label>Birim fiyat (TRY) <input id="manual-price" type="text" inputmode="decimal" placeholder="100000" required></label>
+      <label>Miktar <input id="manual-quantity" type="text" inputmode="decimal" placeholder="0.001" required></label>
+      <p class="disclaimer">İşlem tutarı en fazla 500 TL. Fiyat ve miktar kullanıcı tarafından girilir; borsa fiyatı veya bakiye doğrulanmaz. Bu bir işlem yetkilendirmesi değildir.</p>
+      <button type="submit" class="primary full">Onay önizlemesi oluştur</button>
+    </form>
+    <div id="manual-review" hidden aria-live="polite">
+      <h3>Tek kullanımlık onay</h3><p id="manual-summary"></p>
+      <p id="manual-expiry"></p><label>Onay metnini birebir yazın
+      <input id="manual-confirmation" autocomplete="off" spellcheck="false"></label>
+      <div class="button-row"><button type="button" class="primary" id="manual-approve">Onayla (gönderme)</button>
+      <button type="button" class="danger-outline" id="manual-reject">Reddet</button></div>
+    </div>
+    <p id="manual-status" role="status">Yerel motor bağlantısından sonra kullanılabilir. Gerçek emirler kapalıdır.</p>`;
+  document.querySelector('#view-settings .grid').append(manualPanel);
+  let currentApproval=null;
+  const review=manualPanel.querySelector('#manual-review');
+  const status=manualPanel.querySelector('#manual-status');
+  const clear=()=>{currentApproval=null;review.hidden=true;manualPanel.querySelector('#manual-confirmation').value='';};
+  manualPanel.querySelector('#manual-order-form').addEventListener('submit',async e=>{
+    e.preventDefault();clear();
+    try{
+      const proposal=await api('/api/manual-order/preview',{
+        symbol:manualPanel.querySelector('#manual-symbol').value.trim(),
+        side:manualPanel.querySelector('#manual-side').value,
+        price:manualPanel.querySelector('#manual-price').value.trim(),
+        quantity:manualPanel.querySelector('#manual-quantity').value.trim()
+      });
+      currentApproval=proposal;
+      manualPanel.querySelector('#manual-summary').textContent=`${proposal.side==='BUY'?'AL':'SAT'} · ${proposal.symbol} · Miktar ${proposal.quantity} · Birim fiyat ${proposal.price} TRY · Tahmini toplam ${proposal.estimatedNotionalTry} TRY`;
+      manualPanel.querySelector('#manual-expiry').textContent=`Son onay: ${date(proposal.expiresAt)}. Onay için "ONAYLA ${proposal.id}" yazın.`;
+      review.hidden=false;status.textContent='Taslak oluşturuldu. Onay verilse dahi gerçek emir gönderilmeyecektir.';
+      manualPanel.querySelector('#manual-confirmation').focus();
+    }catch(err){status.textContent=err.message;}
+  });
+  manualPanel.querySelector('#manual-approve').addEventListener('click',async()=>{
+    if(!currentApproval)return;
+    const approval=currentApproval;const confirmation=manualPanel.querySelector('#manual-confirmation').value;
+    clear();
+    try{
+      const result=await api('/api/manual-order/approve',{id:approval.id,digest:approval.digest,confirmation});
+      status.textContent=result.status==='APPROVED_NOT_SENT'
+        ? 'Onay kaydedildi. GERÇEK EMİR GÖNDERİLMEDİ. Yeni işlem için yeni taslak oluşturun.'
+        : 'İşlem gönderilmedi.';
+    }catch(err){status.textContent=`Onay reddedildi veya zaman aşımına uğradı: ${err.message}`;}
+  });
+  manualPanel.querySelector('#manual-reject').addEventListener('click',async()=>{
+    clear();
+    try{await api('/api/manual-order/reject',{});status.textContent='Taslak iptal edildi. Emir gönderilmedi.';}
+    catch(err){status.textContent=err.message;}
+  });
+}
 function setControls(configured){$('#tr-save').disabled=configured;for(const id of ['tr-test','tr-change','tr-delete'])$(`#${id}`).disabled=!configured;}
 function clearKeys(){for(const id of ['tr-key','tr-secret','tr-pass'])$(`#${id}`).value='';}
 function clearBalance(){balances=null;renderPortfolio();}
