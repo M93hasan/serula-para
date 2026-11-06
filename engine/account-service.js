@@ -27,6 +27,6 @@ export class AccountService {
     let response;try { response=await this.#client.account(keys); } catch { throw Error('EXCHANGE_READ_FAILED'); }
     const assets=response?.data?.accountAssets;
     if (!Array.isArray(assets)||assets.length>5000) throw Error('Unexpected response');
-    return assets.map(({asset,free,locked})=>{if(typeof asset!=='string'||!/^[-A-Za-z0-9_]{1,32}$/.test(asset)||!decimal(free)||!decimal(locked))throw Error('Unexpected response');return {asset,free,locked};});
+    const seen=new Set();return assets.map(({asset,free,locked})=>{if(typeof asset!=='string'||!/^[-A-Za-z0-9_]{1,32}$/.test(asset)||seen.has(asset)||!decimal(free)||!decimal(locked))throw Error('Unexpected response');seen.add(asset);return {asset,free,locked};});
   }
 }
