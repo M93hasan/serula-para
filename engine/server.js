@@ -35,6 +35,8 @@ export function createServer({ token, simulator, paper = null, account = null, a
   const scanAutomation = new ScanAutomation(scanner);
   // Preview-only hard cap; no live exchange execution client is reachable from this feature.
   const manualApproval = new ManualOrderApproval({maxOrderTry:500});
+  // Preview-only HALT is independent of the simulation store (which starts halted).
+  let manualPreviewHalted = false;
   const server=http.createServer(async (req, res) => {
     res.setHeader('Cache-Control','no-store'); res.setHeader('X-Content-Type-Options','nosniff');
     res.setHeader('Content-Security-Policy', "default-src 'self'; connect-src 'self'; script-src 'self'; style-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
@@ -126,7 +128,7 @@ export function createServer({ token, simulator, paper = null, account = null, a
             liquidity:{...observed.indicators,asOf:observed.asOf},
             market:{...matches[0],exchangeTime:catalog.exchangeTime,
               priceTime:observed.priceTime,price:String(price)},
-            limits:{halted:simulator.status().halted,realOrdersEnabled:false,
+            limits:{halted:manualPreviewHalted,realOrdersEnabled:false,
               maxOrderTry:'500',maxPriceDeviationBps:100}
           });
           if(!risk.eligible)throw Error('PREFLIGHT_'+risk.reason);
@@ -185,7 +187,7 @@ export function createServer({ token, simulator, paper = null, account = null, a
       if(req.headers.origin!==origin||req.headers['sec-fetch-site']!=='same-origin'||req.headers['content-type']!=='application/json'||req.headers['x-para-request']!=='1')return res.writeHead(403).end('{"error":"forbidden"}');
       try{const state=scanner.status(),catalog=await universe.discover();const candidate=state.results.filter(x=>x.status==='candidate'&&Date.now()-x.asOf<300000&&catalog.markets.some(m=>m.symbol===x.symbol&&m.type===1)).sort((a,b)=>a.indicators.estimatedRoundTripCost-b.indicators.estimatedRoundTripCost)[0];if(!candidate)return res.writeHead(409).end('{"error":"no fresh candidate"}');const result=await ai.analyze(candidate,{catalogApproved:true});result.startedAt=result.time;result.time=Date.now();simulator.saveAI(result);latestScanDecision={decision:result,candidate};return res.end(JSON.stringify(result));}catch{return res.writeHead(503).end('{"error":"ai unavailable"}');}
     }
-    if(req.method==='POST' && req.url==='/halt') {try {if(paper)paper.halt();simulator.halt();return res.end(JSON.stringify(simulator.status()));} catch {res.writeHead(503).end('{"error":"storage unavailable"}');return;}}
+    if(req.method==='POST' && req.url==='/halt') {try {manualPreviewHalted=true;manualApproval.cancel();if(paper)paper.halt();simulator.halt();return res.end(JSON.stringify(simulator.status()));} catch {res.writeHead(503).end('{"error":"storage unavailable"}');return;}}
     if (req.method==='POST' && req.url==='/api/analysis') {
       if(req.headers.origin!==origin || req.headers['sec-fetch-site']!=='same-origin' || req.headers['content-type']!=='application/json' || req.headers['x-para-request']!=='1') {res.writeHead(403).end('{"error":"forbidden"}');return;}
       try {
