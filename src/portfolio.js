@@ -1,7 +1,36 @@
 // Values are approximate display estimates, never account balances or order amounts.
+import { isFreshMarketPrice } from '../engine/market-freshness.js';
+
+export function tryPrices(markets, now=Date.now()) {
+  const pairs=new Map();
+  for(const market of markets||[]){
+    if(typeof market?.symbol!=='string'||!/^[A-Z0-9]{1,20}_[A-Z0-9]{1,20}$/.test(market.symbol)||!isFreshMarketPrice(market,now))continue;
+    const existing=pairs.get(market.symbol);
+    if(!existing||market.priceTime>=existing.priceTime)pairs.set(market.symbol,market);
+  }
+
+  const prices=new Map([['TRY',1]]);
+  for(const {symbol,price} of pairs.values()){
+    const [asset,quote]=symbol.split('_');
+    if(quote==='TRY'&&asset!=='TRY')prices.set(asset,price);
+  }
+  // Direct TRY takes precedence. Only use a one-hop bridge with both legs fresh.
+  for(const bridge of ['USDT','BTC']){
+    const bridgePrice=prices.get(bridge);
+    if(!pairs.has(bridge+'_TRY'))continue;
+    for(const {symbol,price} of pairs.values()){
+      const [asset,quote]=symbol.split('_');
+      if(quote!==bridge||prices.has(asset))continue;
+      const converted=price*bridgePrice;
+      if(Number.isFinite(converted)&&converted>0)prices.set(asset,converted);
+    }
+  }
+  return prices;
+}
+
 export function valuePortfolio(balances,markets,now=Date.now()) {
-  const prices=new Map((markets||[]).filter(m=>Number.isFinite(m.price)&&m.price>0&&Number.isSafeInteger(m.priceTime)&&now>=m.priceTime&&now-m.priceTime<=(m.symbol==='BNB_TRY'?30000:300000)).map(m=>[m.symbol.replace('_TRY',''),m.price]));
-  prices.set('TRY',1);let subtotal=0;const missing=[];let pricedCount=0;
+  const prices=tryPrices(markets,now);
+  let subtotal=0;const missing=[];let pricedCount=0;
   for(const b of balances) {
     const free=Number(b.free),locked=Number(b.locked);
     if(!Number.isFinite(free)||!Number.isFinite(locked)||free<0||locked<0)throw Error('Invalid balance');

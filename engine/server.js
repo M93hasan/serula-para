@@ -116,11 +116,11 @@ export function createServer({ token, simulator, paper = null, account = null, a
     // Read-only market snapshot for chart refreshes; never executes a simulation or order.
     if(req.method==='GET' && req.url==='/api/markets/chart') {
       try {
-        const snapshot=await market.snapshot({includeBnbPrice:true});
+        const snapshot=await market.snapshot({includeBnbPrice:true,chartOnly:true});
         latestMarkets=snapshot.markets;
         return res.end(JSON.stringify(snapshot));
       } catch(err) {
-        const code=/cooldown|in progress/i.test(err.message)?'RATE_LIMIT':/region restricted/i.test(err.message)?'REGION_RESTRICTED':/stale|incomplete/i.test(err.message)?'STALE_DATA':'MARKET_CONNECTION';
+        const code=/cooldown|in progress/i.test(err.message)?'RATE_LIMIT':/region restricted|HTTP 451/i.test(err.message)?'REGION_RESTRICTED':/stale|incomplete/i.test(err.message)?'STALE_DATA':'MARKET_CONNECTION';
         return res.writeHead(503).end(JSON.stringify({error:code}));
       }
     }
@@ -187,7 +187,7 @@ export function createServer({ token, simulator, paper = null, account = null, a
         if(accountHistory){
           try{
             const now=Date.now();
-            const scannerPrices=scanner.status().results.filter(x=>x.priceTime&&x.symbol?.endsWith('_TRY'));
+            const scannerPrices=scanner.status().results.filter(x=>isFreshMarketPrice(x,now));
             const v=valuePortfolio(balances,[...latestMarkets,...scannerPrices],now);
             valueHistory=accountHistory.save({
               estimatedTry:v.complete?v.subtotal:null,
