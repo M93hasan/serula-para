@@ -1,6 +1,6 @@
 import './style.css';
 import { createChart, CandlestickSeries, AreaSeries } from 'lightweight-charts';
-import { valuePortfolio } from './portfolio.js';
+import { tryPrices, valuePortfolio } from './portfolio.js';
 import { isFreshMarketPrice } from '../engine/market-freshness.js';
 import { prepareBalances, displayQuantity } from './balance-view.js';
 const app=document.querySelector('#app');
@@ -27,7 +27,8 @@ app.innerHTML=`<div class="shell"><aside class="sidebar"><div class="brand"><div
     <div class="command-empty" id="command-empty" hidden>Bu komut bulunamadı.</div>
   </div>
 </div>`;
-const $=s=>document.querySelector(s);let token='',pair='BTC_TRY',snapshot=null,balances=null,lastConnect=null,chart=null,candleSeries=null,pnlChart=null,pnlSeries=null,marketRequest=0;
+const $=s=>document.querySelector(s);let scanPrices=[];
+let token='',pair='BTC_TRY',snapshot=null,balances=null,lastConnect=null,chart=null,candleSeries=null,pnlChart=null,pnlSeries=null,marketRequest=0;
 const text=(sel,value)=>{$(sel).textContent=value};const fmt=n=>new Intl.NumberFormat('tr-TR',{maximumFractionDigits:2}).format(n);const date=t=>new Date(t).toLocaleString('tr-TR');
 function navigate(view){document.querySelectorAll('.view').forEach(x=>x.hidden=x.id!==`view-${view}`);document.querySelectorAll('.nav').forEach(x=>x.classList.toggle('active',x.dataset.view===view));text('#page-title',({overview:'Genel Bakış',markets:'Piyasalar',decisions:'AI Kararları',simulation:'Simülasyon',history:'İşlem Geçmişi',settings:'Ayarlar'})[view]);if(chart)chart.applyOptions({width:$('#market-chart').clientWidth});if(pnlChart)pnlChart.applyOptions({width:$('#pnl-chart').clientWidth});}
 // Terminal workspace controls are UI-only; never persist credentials.
@@ -156,14 +157,12 @@ async function refreshAccountHistory(){
 }
 $('#account-history-refresh').addEventListener('click',()=>refreshAccountHistory());
 
-function renderPortfolio(){const list=$('#assets-list');list.replaceChildren();text('#portfolio-total','—');text('#portfolio-btc','—');if(!balances){text('#portfolio-label','Toplam portföy');list.textContent='Bağlantı testinden sonra gösterilir.';text('#portfolio-note','Hesap bağlanmadı');return;}
- let nonzero;try{nonzero=prepareBalances(balances);}catch{list.textContent='Bakiye biçimi doğrulanamadı.';text('#portfolio-note','Hesap bakiyesi doğrulanamadı.');return;}if(!nonzero.length)list.textContent='Sıfırdan büyük varlık bulunamadı.';for(const b of nonzero){const row=document.createElement('div');row.className='asset';const name=document.createElement('strong');name.textContent=b.asset;const amount=document.createElement('span');amount.textContent=`Kullanılabilir: ${displayQuantity(b.free)} · Kilitli: ${displayQuantity(b.locked)} · Toplam: ${displayQuantity(b.total)}`;
-  if(b.asset==='BNB'){const ticker=snapshot?.markets?.find(m=>m.symbol==='BNB_TRY'),now=Date.now();const fresh=ticker&&Number.isFinite(ticker.price)&&ticker.price>0&&Number.isSafeInteger(ticker.priceTime)&&ticker.priceTime<=now&&now-ticker.priceTime<=30000;
-    const tryValue=fresh?Number(b.total)*ticker.price:null;
-    amount.textContent+=Number.isFinite(tryValue)?` · ≈ ₺${fmt(tryValue)}`:' · TRY fiyatı güncel değil';
-  }
+function renderPortfolio(){const now=Date.now();const markets=[...scanPrices,...(snapshot?.markets||[])];const list=$('#assets-list');list.replaceChildren();text('#portfolio-total','—');text('#portfolio-btc','—');if(!balances){text('#portfolio-label','Toplam portföy');list.textContent='Bağlantı testinden sonra gösterilir.';text('#portfolio-note','Hesap bağlanmadı');return;}
+ let nonzero;try{nonzero=prepareBalances(balances);}catch{list.textContent='Bakiye biçimi doğrulanamadı.';text('#portfolio-note','Hesap bakiyesi doğrulanamadı.');return;}if(!nonzero.length)list.textContent='Sıfırdan büyük varlık bulunamadı.';const prices=tryPrices(markets,now);for(const b of nonzero){const row=document.createElement('div');row.className='asset';const name=document.createElement('strong');name.textContent=b.asset;const amount=document.createElement('span');amount.textContent=`Kullanılabilir: ${displayQuantity(b.free)} · Kilitli: ${displayQuantity(b.locked)} · Toplam: ${displayQuantity(b.total)}`;
+  const tryValue=Number(b.total)*prices.get(b.asset);
+  amount.textContent+=Number.isFinite(tryValue)?` · ≈ ₺${fmt(tryValue)}`:' · Güncel TRY değeri yok';
   row.append(name,amount);list.append(row);}
- try{const v=valuePortfolio(balances,(snapshot?.markets||[]).filter(m=>m.symbol.endsWith('_TRY')&&isFreshMarketPrice(m)));if(v.missing.length){text('#portfolio-label','Hesaplanabilen alt toplam');text('#portfolio-total',v.pricedCount?`≈ ₺${fmt(v.subtotal)}`:'—');text('#portfolio-note',`Fiyatı bulunamayan: ${v.missing.join(', ')} · toplam eksik`);return;}text('#portfolio-label','Toplam portföy');text('#portfolio-total',`≈ ₺${fmt(v.subtotal)}`);text('#portfolio-note','Gerçek bakiye · yaklaşık değer');if(v.btc!==null)text('#portfolio-btc',`≈ ${v.btc.toFixed(8)} BTC`);}catch{text('#portfolio-label','Toplam portföy');text('#portfolio-note','Bakiye hesaplanamadı. Bağlantıyı tekrar test edin.');}}
+ try{const v=valuePortfolio(balances,markets,now);if(v.missing.length){text('#portfolio-label','Hesaplanabilen alt toplam');text('#portfolio-total',v.pricedCount?`≈ ₺${fmt(v.subtotal)}`:'—');text('#portfolio-note',`Fiyatı bulunamayan: ${v.missing.join(', ')} · toplam eksik`);return;}text('#portfolio-label','Toplam portföy');text('#portfolio-total',`≈ ₺${fmt(v.subtotal)}`);text('#portfolio-note','Gerçek bakiye · yaklaşık değer');if(v.btc!==null)text('#portfolio-btc',`≈ ${v.btc.toFixed(8)} BTC`);}catch{text('#portfolio-label','Toplam portföy');text('#portfolio-note','Bakiye hesaplanamadı. Bağlantıyı tekrar test edin.');}}
 
 // Binance TR timestamps are UTC milliseconds; Lightweight Charts needs UTC seconds.
 // Only the labels are localized. Never shift timestamps, or hourly bars move on the time axis.
@@ -267,6 +266,8 @@ async function refreshScan(){
     const fingerprint=`${s.startedAt||''}:${s.status}:${done}`;
     if(fingerprint===lastScanFingerprint)return;
     lastScanFingerprint=fingerprint;
+    scanPrices=s.results.filter(x=>isFreshMarketPrice(x));
+    if(balances)renderPortfolio();
     const box=$('#scan-list');box.replaceChildren();
     for(const x of s.results){
       const p=document.createElement('p');
