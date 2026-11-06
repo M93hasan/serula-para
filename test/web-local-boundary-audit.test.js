@@ -17,7 +17,11 @@ test('web refuses unauthenticated API and does not trust local-desktop session c
   for(const path of ['/api/auth/me','/status','/api/binance-tr/balance','/api/analysis']){
     const response=await app.fetch(req(path,{headers:{Cookie:'para_local_session=token; para_auth=local'}}),env);
     assert.equal(response.status,401,path);
-    assert.deepEqual(await response.json(),{error:'AUTH_REQUIRED'});
+    if(path.startsWith('/api/'))assert.deepEqual(await response.json(),{error:'AUTH_REQUIRED'});
+    else {
+      assert.match(response.headers.get('content-type')||'',/text\/html/);
+      assert.match(await response.text(),/Google ile giriş/);
+    }
   }
   const home=await app.fetch(req('/'),env);
   assert.equal(home.status,401);
