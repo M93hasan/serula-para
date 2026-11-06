@@ -131,9 +131,19 @@ export function createServer({ token, simulator, paper = null, account = null, a
     }
     if(req.method==='POST' && req.url==='/api/ai/scan-best') {
       if(req.headers.origin!==origin||req.headers['sec-fetch-site']!=='same-origin'||req.headers['content-type']!=='application/json'||req.headers['x-para-request']!=='1')return res.writeHead(403).end('{"error":"forbidden"}');
-      try{const state=scanner.status(),catalog=await universe.discover();const candidate=state.results.filter(x=>x.status==='candidate'&&Date.now()-x.asOf<300000&&catalog.markets.some(m=>m.symbol===x.symbol&&m.type===1)).sort((a,b)=>a.indicators.estimatedRoundTripCost-b.indicators.estimatedRoundTripCost)[0];if(!candidate)return res.writeHead(409).end('{"error":"no fresh candidate"}');const result=await ai.analyze(candidate,{catalogApproved:true});result.startedAt=result.time;result.time=Date.now();simulator.saveAI(result);latestScanDecision={decision:result,candidate};return res.end(JSON.stringify(result));}catch{return res.writeHead(503).end('{"error":"ai unavailable"}');}
+      try{const state=scanner.status(),catalog=await universe.discover();const candidate=state.results.filter(x=>x.status==='candidate'&&isFreshMarketPrice(x)&&catalog.markets.some(m=>m.symbol===x.symbol&&m.type===1)).sort((a,b)=>a.indicators.estimatedRoundTripCost-b.indicators.estimatedRoundTripCost)[0];if(!candidate)return res.writeHead(409).end('{"error":"no fresh candidate"}');const result=await ai.analyze(candidate,{catalogApproved:true});result.startedAt=result.time;result.time=Date.now();simulator.saveAI(result);latestScanDecision={decision:result,candidate};return res.end(JSON.stringify(result));}catch{return res.writeHead(503).end('{"error":"ai unavailable"}');}
     }
-    if(req.method==='POST' && req.url==='/halt') {try {if(paper)paper.halt();simulator.halt();return res.end(JSON.stringify(simulator.status()));} catch {res.writeHead(503).end('{"error":"storage unavailable"}');return;}}
+    if(req.method==='POST' && req.url==='/halt') {
+      let failed=false;
+      for(const store of [simulator,paper]){
+        if(!store)continue;
+        try{store.halt();}catch{failed=true;}
+      }
+      try{
+        if(!failed)return res.end(JSON.stringify(simulator.status()));
+      }catch{/* Status could not be confirmed after stopping. */}
+      return res.writeHead(503).end('{"error":"storage unavailable"}');
+    }
     if (req.method==='POST' && req.url==='/api/analysis') {
       if(req.headers.origin!==origin || req.headers['sec-fetch-site']!=='same-origin' || req.headers['content-type']!=='application/json' || req.headers['x-para-request']!=='1') {res.writeHead(403).end('{"error":"forbidden"}');return;}
       try {

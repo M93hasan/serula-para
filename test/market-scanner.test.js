@@ -50,3 +50,32 @@ for(const status of [418,429])for(const header of ['120',new Date(now+120000).to
   clock=now+(header==='invalid'?60000:120000);scanner.start();await settle(scanner);assert.equal(calls,2);
  });
 }
+
+test('a sharp move blocks a scan candidate and a future quote is rejected', async () => {
+  const universe = { discover: async () => ({
+    exchangeTime: now, markets: [{ symbol: 'BTC_TRY', type: 1 }, { symbol: 'ETH_TRY', type: 1 }],
+  }) };
+  const scanner = new MarketScanner({
+    universe, clock: () => now, sleep: async () => {},
+    fetchImpl: async url => {
+      const request = new URL(url);
+      if (request.pathname.endsWith('/klines')) {
+        return Response.json(candles.map(c => [
+          c.time, c.open, c.high, c.low, c.close, c.volume, c.closeTime, c.quoteVolume,
+        ]));
+      }
+      if (request.pathname.endsWith('/depth')) return Response.json(book);
+      if (request.searchParams.get('symbol') === 'BTCTRY') {
+        return Response.json([{ price: '160', time: now - 1_000 }]);
+      }
+      return Response.json([{ price: '140', time: now + 1 }]);
+    },
+  });
+  scanner.start();
+  await settle(scanner);
+  const [sharp, future] = scanner.status().results;
+  assert.equal(sharp.status, 'excluded');
+  assert.equal(sharp.researchSignal, 'BEKLE');
+  assert.match(sharp.reason, /oynaklık/);
+  assert.equal(future.status, 'unavailable');
+});
