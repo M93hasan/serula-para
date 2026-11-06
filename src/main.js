@@ -30,7 +30,7 @@ const $=s=>document.querySelector(s);let token='',pair='BTC_TRY',snapshot=null,b
 let marketReconnectTimer=null,marketFailures=0,overviewLoading=false,marketConnected=false,portfolioPriceUpdatedAt=null;
 const sendMarketEvent=(type,source,code='UNKNOWN')=>{if(!token)return;api('/api/markets/events',{type,source,code}).catch(()=>{});};
 const text=(sel,value)=>{$(sel).textContent=value};const fmt=n=>new Intl.NumberFormat('tr-TR',{maximumFractionDigits:2}).format(n);const date=t=>new Date(t).toLocaleString('tr-TR');
-function navigate(view){document.querySelectorAll('.view').forEach(x=>x.hidden=x.id!==`view-${view}`);document.querySelectorAll('.nav').forEach(x=>x.classList.toggle('active',x.dataset.view===view));text('#page-title',({overview:'Genel Bakış',markets:'Piyasalar',decisions:'AI Kararları',simulation:'Simülasyon',history:'İşlem Geçmişi',settings:'Ayarlar'})[view]);if(chart)chart.applyOptions({width:$('#market-chart').clientWidth});if(pnlChart)pnlChart.applyOptions({width:$('#pnl-chart').clientWidth});}
+function navigate(view){document.querySelectorAll('.view').forEach(x=>x.hidden=x.id!==`view-${view}`);document.querySelectorAll('.nav').forEach(x=>x.classList.toggle('active',x.dataset.view===view));text('#page-title',({overview:'Genel Bakış',markets:'Piyasalar',decisions:'AI Kararları',simulation:'Simülasyon',history:'İşlem Geçmişi',settings:'Ayarlar'})[view]);requestAnimationFrame(()=>{if(chart)chart.applyOptions({width:Math.max(1,$('#market-chart').clientWidth)});if(pnlChart)pnlChart.applyOptions({width:Math.max(1,$('#pnl-chart').clientWidth)});});}
 // Terminal workspace controls are UI-only; never persist credentials.
 const commandOverlay=$('#command-overlay');
 const commandSearch=$('#command-search');
@@ -131,7 +131,19 @@ if(!webMode){
   }).catch(()=>text('#google-login-status','Google oturumu kontrol edilemedi; yerel anahtar girişi kullanılabilir.'));
 }
 
-$('#local-halt').addEventListener('click',async()=>{try{await api('/halt',{});text('#local-status','Acil durdurma etkin · gerçek emirler kapalı');}catch(e){text('#local-status',e.message);}});
+$('#local-halt').addEventListener('click',async()=>{
+  $('#analysis-auto').checked=false;
+  $('#analysis-auto').disabled=true;
+  try{
+    await api('/halt',{});
+    await Promise.allSettled([refreshAutonomousResearch(),refreshPaper(),refreshScan()]);
+    text('#local-status','ACİL DURDURMA · otonom tarama, AI araştırması ve sanal mod kapatıldı · gerçek emirler zaten kapalı');
+    text('#terminal-stop-state','ACİL DURDURMA AKTİF');
+  }catch(e){
+    text('#local-status','Durdurma isteği doğrulanamadı: '+e.message+' · uygulamayı kullanmayın');
+    text('#terminal-stop-state','DURDURMA DOĞRULANAMADI');
+  }
+});
 async function saveCredentials(replace){const body={apiKey:$('#tr-key').value,secretKey:$('#tr-secret').value,passphrase:$('#tr-pass').value,replace};clearKeys();clearBalance();try{await api('/api/binance-tr/save',body);setControls(true);text('#tr-state','Kasa kaydedildi. Bağlantıyı test edin.');text('#tr-overview','Bağlı değil');}catch(e){text('#tr-state',e.message);}}
 $('#tr-save').addEventListener('click',()=>saveCredentials(false));$('#tr-change').addEventListener('click',()=>saveCredentials(true));
 $('#tr-delete').addEventListener('click',async()=>{if(!confirm('Yerel kasadaki Binance TR bilgileri silinsin mi?'))return;const passphrase=$('#tr-pass').value;clearKeys();clearBalance();try{await api('/api/binance-tr/delete',{passphrase});setControls(false);text('#tr-state','Yerel kasa silindi. Binance TR anahtarı iptal edilmedi.');text('#tr-overview','Bağlı değil');}catch(e){text('#tr-state',e.message);}});
@@ -269,12 +281,86 @@ document.addEventListener('visibilitychange',()=>{
     refreshPortfolioPrices().catch(()=>{});
   }
 });
-function renderPair(){document.querySelectorAll('.pair').forEach(x=>x.classList.toggle('active',x.dataset.pair===pair));const market=snapshot?.markets?.find(m=>m.symbol===pair);if(!market)return;$('#chart-empty').hidden=true;candleSeries.setData(market.candles.map(c=>({time:Math.floor(c.time/1000),open:c.open,high:c.high,low:c.low,close:c.close})));chart.timeScale().fitContent();text('#chart-subtitle',`${pair.replace('_',' / ')} · Son işlem ≈ ${fmt(market.price)} ${pair.split('_').at(-1)} · ${date(market.priceTime)}`);}
+let chartCandleKey='';
+function renderPair(){
+  document.querySelectorAll('.pair').forEach(x=>x.classList.toggle('active',x.dataset.pair===pair));
+  const market=snapshot?.markets?.find(m=>m.symbol===pair);
+  if(!market||!Array.isArray(market.candles)||!market.candles.length){chartCandleKey='';candleSeries.setData([]);$('#chart-empty').hidden=false;text('#chart-empty','Bu parite için doğrulanmış mum verisi yok.');return;}
+  const candles=market.candles.filter(c=>Number.isSafeInteger(c.time)&&[c.open,c.high,c.low,c.close].every(x=>Number.isFinite(x)&&x>0)).map(c=>({time:Math.floor(c.time/1000),open:c.open,high:c.high,low:c.low,close:c.close})).sort((a,b)=>a.time-b.time);
+  if(!candles.length){$('#chart-empty').hidden=false;return;}
+  const key=pair+':'+candles.length+':'+candles.at(-1).time+':'+candles.at(-1).close;
+  if(chartCandleKey!==key){
+    candleSeries.setData(candles);chartCandleKey=key;
+    requestAnimationFrame(()=>{chart.applyOptions({width:Math.max(1,$('#market-chart').clientWidth)});chart.timeScale().fitContent();});
+  }
+  $('#chart-empty').hidden=true;
+  text('#chart-subtitle',`${pair.replace('_',' / ')} · Son işlem ≈ ${fmt(market.price)} ${pair.split('_').at(-1)} · ${date(market.priceTime)}`);
+}
 function switchPair(next){if(next===pair)return;pair=next;const custom=$('#active-catalog-pair');custom.hidden=['BTC_TRY','ETH_TRY'].includes(next);custom.dataset.pair=next;custom.textContent=next.replace('_','/');marketRequest++;if(!snapshot?.markets?.some(m=>m.symbol===pair)){candleSeries.setData([]);$('#chart-empty').hidden=false;text('#chart-subtitle','Bu parite için veri yok.');}renderPair();text('#decision-action','Yeni parite için analiz gerekli');text('#overview-signal','—');text('#overview-reason','Yeni parite için analiz gerekli');text('#decision-score','—');text('#analysis-backtest','Yeni parite için geçmiş testi çalıştırın.');text('#overview-pnl','—');$('#pnl-empty').hidden=false;pnlSeries.setData([]);$('#trade-rows').innerHTML='<tr><td colspan="5" class="empty">Yeni parite için analiz gerekli.</td></tr>';}
 document.querySelectorAll('.pair').forEach(x=>x.addEventListener('click',()=>switchPair(x.dataset.pair)));
 function renderMarkets(){const rows=$('#market-rows');rows.replaceChildren();for(const m of snapshot.markets){const tr=document.createElement('tr');for(const value of [m.symbol.replace('_',' / '),`${fmt(m.price)} ${m.symbol.split('_').at(-1)}`,date(m.priceTime)]){const td=document.createElement('td');td.textContent=value;tr.append(td);}const td=document.createElement('td'),button=document.createElement('button');button.textContent='Grafiği aç';button.addEventListener('click',()=>{switchPair(m.symbol);navigate('overview');});td.append(button);tr.append(td);rows.append(tr);}}
 async function runAnalysis(){const selected=pair,id=++marketRequest;const quote=selected.split('_').at(-1);$('#analysis-run').disabled=true;text('#analysis-status','Piyasa verileri alınıyor…');try{const config={symbol:selected,budget:Number($('#sim-budget').value),maxTrade:Number($('#sim-trade').value),maxLoss:Number($('#sim-loss').value),feeRate:Number($('#sim-fee').value)/100};const r=await api('/api/analysis',config);if(id!==marketRequest||selected!==pair)return;snapshot=r;renderPair();renderMarkets();renderPortfolio();const d=r.decision,b=r.backtest;text('#decision-action',`${d.symbol.replace('_',' / ')} · ${d.action}`);text('#decision-reason',d.reason);text('#decision-score',`${d.score}/100`);text('#decision-time',date(d.time));text('#auto-action',`${r.automaticDecision.symbol.replace('_',' / ')} · ${r.automaticDecision.action}`);text('#overview-signal',d.action);text('#overview-reason',`${pair.replace('_',' / ')} · gösterge gücü ${d.score}/100`);text('#overview-pnl',`${b.profitLoss>=0?'+':''}${fmt(b.profitLoss)} ${quote}`);text('#analysis-status',`Son güncelleme: ${date(r.priceTime)}`);text('#analysis-backtest',`${r.symbol.replace('_',' / ')} · ${r.candleCount} saat · Başlangıç ${fmt(b.budget)} ${quote} · Sonuç ${fmt(b.equity)} ${quote} · Komisyon ${fmt(b.fees)} ${quote} · ${b.trades.length} işlem`);$('#pnl-empty').hidden=true;pnlSeries.setData(b.curve.map(c=>({time:Math.floor(c.time/1000),value:c.value})));pnlChart.timeScale().fitContent();const rows=$('#trade-rows');rows.replaceChildren();if(!b.trades.length){rows.innerHTML='<tr><td colspan="5" class="empty">Bu dönemde işlem oluşmadı.</td></tr>';}for(const t of b.trades){const tr=document.createElement('tr');for(const v of [date(t.time),t.action,`${fmt(t.price)} ${quote}`,`${fmt(t.notional)} ${quote}`,`${fmt(t.fee)} ${quote}`]){const td=document.createElement('td');td.textContent=v;tr.append(td);}rows.append(tr);}}catch(e){text('#analysis-status',e.message);}finally{$('#analysis-run').disabled=!token;}}
 $('#analysis-run').addEventListener('click',runAnalysis);setInterval(()=>{if(token&&$('#analysis-auto').checked&&!$('#analysis-run').disabled)runAnalysis();},300000);setInterval(()=>{if(balances)renderPortfolio();},30000);setInterval(()=>{if(balances)refreshPortfolioPrices().catch(()=>{});},60000);setInterval(refreshLivePrices,30000);setInterval(()=>{if(token&&!snapshot?.markets?.length&&!overviewLoading&&!marketReconnectTimer)loadMarketOverview().catch(()=>{});},60000);createCharts();
+
+// Read-only execution dashboard: never mixes real account, simulated ledger, or backtest.
+const terminalState=document.createElement('span');
+terminalState.id='terminal-stop-state';
+terminalState.textContent='Gerçek emirler: KAPALI';
+terminalState.setAttribute('role','status');
+document.querySelector('.terminal-ticker').append(terminalState);
+const overviewStatus=document.createElement('article');
+overviewStatus.className='panel terminal-safety-panel';
+overviewStatus.innerHTML='<h3>İşlem durumları</h3><div class="terminal-status-grid"><p id="real-mode-state">Gerçek hesap · yalnızca okuma</p><p id="paper-mode-state">Sanal portföy · kontrol ediliyor</p><p id="auto-mode-state">Otonom AI · kontrol ediliyor</p></div><p>Bu üç alan ayrı sistemlerdir. Gerçek emir gönderimi uygulamada kapalıdır.</p>';
+$('#view-overview').append(overviewStatus);
+const executionPanel=document.createElement('article');
+executionPanel.className='panel terminal-execution-panel';
+executionPanel.innerHTML='<h3>Emirler ve işlem geçmişi</h3><p id="real-orders-note">GERÇEK · Açık emirler ve geçmiş için salt okunur emir endpoint entegrasyonu henüz doğrulanmadı. Bilinmeyen emirler boş liste olarak gösterilmez.</p><h4>Sanal açık pozisyonlar (emir değildir)</h4><div id="paper-open-positions">Sanal durum henüz alınmadı.</div><h4>Sanal işlem geçmişi</h4><div id="paper-execution-history">Sanal işlem geçmişi henüz alınmadı.</div><h4>Sanal günlük ve toplam kâr/zarar</h4><div id="paper-pnl-report">Rapor henüz alınmadı.</div>';
+$('#view-history').append(executionPanel);
+const notificationPanel=document.createElement('article');
+notificationPanel.className='panel';
+notificationPanel.innerHTML='<h3>AI kararları ve hata bildirimleri</h3><p id="terminal-ai-decision">AI kararı bekleniyor.</p><div id="terminal-errors" role="status">Hata kaydı yok veya henüz alınmadı.</div>';
+$('#view-decisions').append(notificationPanel);
+async function refreshTerminalDashboard(){
+ if(!token)return;
+ const result=await Promise.allSettled([api('/api/paper/status'),api('/api/ai/autonomous'),api('/api/ai/history'),api('/api/markets/events')]);
+ const [paperResult,autoResult,aiResult,eventsResult]=result;
+ text('#real-mode-state','GERÇEK · yalnızca okuma · '+(balances?'son bakiye okuması '+date(lastConnect):'hesap bağlanmadı'));
+ if(autoResult.status==='fulfilled'){
+   const a=autoResult.value;
+   text('#auto-mode-state','OTONOM AI · '+(a.enabled?'ARAŞTIRMA AÇIK':'KAPALI')+(a.haltReason?' · HALT '+a.haltReason:'')+' · gerçek emir yok');
+ }else text('#auto-mode-state','OTONOM AI · durum doğrulanamadı');
+ if(paperResult.status==='fulfilled'){
+   const p=paperResult.value;
+   text('#paper-mode-state','SANAL · '+(p.status.halted?'HALT':'İZLEME AÇIK')+' · emir yürütme kapalı');
+   const position=$('#paper-open-positions');position.replaceChildren();
+   const positions=p.valuation?.positions||[];
+   if(!positions.length)position.textContent='Açık sanal pozisyon bulunamadı.';
+   for(const x of positions){const row=document.createElement('p');row.textContent=x.symbol+' · '+(x.valuation==='available'?'fiyat doğrulandı':'güncel fiyat eksik');position.append(row);}
+   const history=$('#paper-execution-history');history.replaceChildren();
+   const trades=(p.history||[]).filter(x=>x.kind==='execute');
+   if(!trades.length)history.textContent='Sanal işlem bulunamadı; geçmiş test işlemleri ayrı gösterilir.';
+   for(const t of trades.slice(0,25)){const row=document.createElement('p');row.textContent=date(t.now)+' · SANAL '+t.order.action+' · '+t.order.symbol+' · miktar '+t.order.quantity;history.append(row);}
+   const report=$('#paper-pnl-report');report.replaceChildren();
+   for(const q of p.performance?.quotes||[]){
+     const fmtMinor=n=>n===null||!Number.isFinite(n)?'hesaplanamadı':(n/100).toFixed(2)+' '+q.asset;
+     const row=document.createElement('p');
+     row.textContent=q.asset+' · Günlük gerçekleşen '+fmtMinor(q.day.realizedNet)+' · Toplam gerçekleşen '+fmtMinor(q.total.realizedNet)+' · Açık gerçekleşmemiş '+fmtMinor(q.currentUnrealized)+' · Günlük toplam değer değişimi: hesaplanamadı';
+     report.append(row);
+   }
+   if(!report.children.length)report.textContent='Sanal kâr/zarar verisi bulunamadı.';
+ }else {text('#paper-mode-state','SANAL · durum doğrulanamadı');text('#paper-pnl-report','Sanal rapor alınamadı.');}
+ if(aiResult.status==='fulfilled'){
+  const decision=aiResult.value.history?.[0];
+  text('#terminal-ai-decision',decision?date(decision.time)+' · '+decision.symbol+' · '+decision.action+' · '+decision.reason:'AI kararı henüz oluşmadı.');
+ }else text('#terminal-ai-decision','AI karar geçmişine erişilemiyor.');
+ if(eventsResult.status==='fulfilled'){
+  const box=$('#terminal-errors');box.replaceChildren();
+  const events=(eventsResult.value.events||[]).filter(e=>e.type==='API_ERROR'||e.type==='CONNECTION_LOST'||e.type==='OFFLINE'||e.type==='PORTFOLIO_REFRESH_FAILED').slice(-10).reverse();
+  if(!events.length)box.textContent='Kayıtlı bağlantı veya API hatası bulunamadı.';
+  for(const e of events){const row=document.createElement('p');row.textContent=e.time+' · '+e.source+' · '+e.type+' · '+e.code;box.append(row);}
+ }else text('#terminal-errors','API hata günlüğü şu anda alınamadı.');
+}
+setInterval(()=>{if(token)refreshTerminalDashboard().catch(()=>{});},15000);
 
 // AI and deterministic SMA results are deliberately separate.
 const providerPanel=document.createElement('article');
