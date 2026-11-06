@@ -1,7 +1,7 @@
 # Giriş ve ilk kurulum — uygulama ve dağıtım
 
 ## Bu dalda uygulananlar
-- Yerel uygulamada her yeni sayfa açılışında Local / İnternet tabanlı mod seçimi. İnternet modu, çevrimiçi bir kimlik doğrulama sunucusu olmadığı için güvenli biçimde kapalıdır.
+- Yerel uygulamada her yeni sayfa açılışında Local / İnternet tabanlı mod seçimi. İnternet modu mevcut Cloudflare Worker üzerindeki ayrı Google OAuth oturumuna yönlendirilir; yerel token veya kasa bilgisi aktarılmaz.
 - Google OAuth, e-posta kodu ve geçici yerel kurtarma anahtarı ile giriş seçenekleri.
 - Google ve e-posta oturumları için 8 saat süreli HttpOnly/SameSite=Strict cookie. Sunucu yalnızca SHA-256 özeti ve süreli kimlik verisini yerel kullanıcı dizininde `~/.para/auth-sessions.json` dosyasında tutar.
 - Local motor yeniden başladığında ve internet yokken, süresi dolmamış oturum yerel olarak doğrulanır. Google'a tekrar bağlanmak gerekmez. Oturumun süresi dolduğunda Local kurtarma anahtarı kullanılabilir.
@@ -28,7 +28,7 @@ Google OAuth yönlendirme adresi tam olarak `http://127.0.0.1:8788/auth/google/c
 - Kodlar ve Google ID tokenları diske yazılmaz; yalnız SHA-256 oturum belirteçleri ve sınırlı kimlik bilgileri diskte kalır. Logout oturum özetini siler.
 - Oturumun 8 saatlik süresi internetsizken de uygulanır. Piyasa verisi ve e-posta kodu gönderimi internet olmadan çalışmaz.
 - E-posta kodu göndermek için internet gerekir. İlk kez Google girişi de internet gerektirir.
-- İnternet tabanlı mod için HTTPS, uzak backend, sunucu oturum deposu, kimlik/CSRF/hesap izolasyonu ayrıca uygulanmalıdır. Buradaki local mekanizmayı doğrudan internete sunmayın.
+- İnternet tabanlı mod mevcut HTTPS Cloudflare Worker Google oturumunu kullanır. E-posta OTP yalnızca Windows yerel motorunda desteklenir; web e-posta OTP için ayrıca durable, tek kullanımlık token deposu ve güvenli rate-limiting gerekir. Local mekanizmayı doğrudan internete sunmayın.
 - E-posta kodunun 6 haneli olması; tek cihazla sınırlı, izinli e-posta ve rate limit ile korunur. Dışarı açılacak bir hizmet için IP tabanlı rate limiting, sağlayıcı teslimat geri bildirimi ve denetim kayıtları da gereklidir.
 
 ## Doğrulama
