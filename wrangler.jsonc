@@ -6,6 +6,11 @@
   "compatibility_flags": ["nodejs_compat"],
   "main": "cloudflare/worker.js",
   "previews": {
+    "vars": {
+      "GOOGLE_OAUTH_CLIENT_ID": "200434213389-cbkplrr8tj6lumaorj2jqbc78t9eaap1.apps.googleusercontent.com",
+      "GOOGLE_ALLOWED_EMAIL": "m93hasan@gmail.com",
+      "GOOGLE_REDIRECT_URI": "https://feat-para-integration-20261106-local-serula-para.m93hasan.workers.dev/auth/google/callback"
+    },
     "ratelimits": [{ "name": "ANALYSIS_LIMIT", "namespace_id": "1638020471", "simple": { "limit": 3, "period": 60 } }]
   },
   "preview_urls": true,
