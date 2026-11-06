@@ -36,7 +36,7 @@ export function createLocalGoogleAuth({clientId='',clientSecret='',allowedEmail=
   async function handle(path,request){
     cleanup();
     if(path==='/auth/google/status')return new Response(JSON.stringify({configured,mode:'local',vaultUnlocked:false}),{headers:{...authHeaders,'Content-Type':'application/json'}});
-    if(!configured)return new Response('Google OIDC is not configured on this Windows device.',{status:503,headers:authHeaders});
+    if(!configured && path!=='/auth/google/logout')return new Response('Google OIDC is not configured on this Windows device.',{status:503,headers:authHeaders});
     if(path==='/auth/google/start'){
       if(request.method!=='GET')return new Response('',{status:405,headers:authHeaders});
       if(pending.size>=20)return new Response('',{status:429,headers:authHeaders});
