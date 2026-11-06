@@ -111,7 +111,9 @@ export function createServer({ token, simulator, paper = null, account = null, a
           // Require an independently fetched and recent live catalogue and market trade.
           const catalog=await universe.discover();
           const matches=catalog.markets?.filter(m=>m.symbol===order.symbol&&m.type===1)??[];
-          const scanMatches=scanner.status().results?.filter(m=>m.symbol===order.symbol&&m.status==='candidate')??[];
+          const scanState=scanner.status();
+          if(scanState.status!=='complete')throw Error('MARKET_NOT_READY');
+          const scanMatches=scanState.results?.filter(m=>m.symbol===order.symbol&&m.status==='candidate')??[];
           if(matches.length!==1||scanMatches.length!==1)throw Error('MARKET_NOT_READY');
           const observed=scanMatches[0];
           if(!Number.isSafeInteger(observed.asOf)||observed.asOf>Date.now()||Date.now()-observed.asOf>30000)
