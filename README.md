@@ -1,16 +1,18 @@
 # PARA Trading — Windows 11
 
-**Gerçek alım satım ve para çekme kapalıdır.** Panel yalnızca kendi bilgisayarınızda çalışır.
+**Gerçek alım satım ve para çekme kapalıdır.** Yerel motor kendi bilgisayarınızda çalışır; ayrıca ayrı bir Cloudflare Web araştırma sürümü vardır.
+
+> **Güncel durum (06.11.2026):** Local/Web + e-posta OTP PR #49; Windows Binance DPAPI + Web kasası PR #50; Binance tanısı PR #51; AI doğrulaması PR #52; Web testleri PR #53 ve emir güvenliği PR #55 henüz taslak olduğundan `main` sürümünün parçası değillerdir. Gerçek emir kapalıdır. [Issue #54](https://github.com/M93hasan/serula-para/issues/54) ve [Görev 54 raporu](docs/TASK_54_STATUS_2026-11-06.md) esas alınmalıdır.
 
 1. [Node.js](https://nodejs.org/) 22.13 veya daha yeni bir sürümü kurun; kurulumdan sonra terminali yeniden açın.
-2. PR #3 dalının proje dosyalarını bilgisayarınıza indirin ve çıkarın. Proje klasöründeki **start-para.cmd** dosyasına çift tıklayın. İlk açılışta internet gerekir; bağımlılıklar indirilir ve panel hazırlanır.
+2. Güncel `main` kaynaklarını GitHub üzerinden edinin (var olan kullanıcı verilerinizi veya `%USERPROFILE%\.para` klasörünü silmeyin). Proje klasöründeki **start-para.cmd** dosyasına çift tıklayın. İlk açılışta internet gerekir; bağımlılıklar indirilir ve panel hazırlanır.
 3. Açılan tarayıcıda, siyah pencerede gösterilen **yerel erişim anahtarını** kopyalayıp “Yerel motor bağlantısı” alanına yapıştırın ve **Bağlan** düğmesine basın. Tarayıcı açılmazsa `http://127.0.0.1:8788` adresini elle açın. Pencereyi açık tutun; kapatmak için Ctrl+C kullanın.
 4. **Ayarlar → Binance TR API** bölümünde salt okunur API Key, API Secret ve en az 16 karakterli kasa parolası girip **Kaydet** seçin. Binance TR üzerinde anahtara işlem ve para çekme yetkisi vermeyin.
-5. Bakiye için kasa parolasını tekrar girip **Bağlantıyı Test Et** seçin. Başarılıysa gerçek varlıklar kullanılabilir ve kilitli miktarlarıyla gösterilir. Simülasyon bütçesi gerçek bakiye değildir.
+5. Bakiye için (mevcut `main` Binance kasasında) kasa parolasını tekrar girip **Bağlantıyı Test Et** seçin. Başarılıysa gerçek varlıklar kullanılabilir ve kilitli miktarlarıyla gösterilir. Simülasyon bütçesi gerçek bakiye değildir.
 
 Kasa ve simülasyon dosyaları `%USERPROFILE%\.para` klasöründedir. Parolanızı unutursanız kasa açılamaz. **Sil**, yalnızca yerel kasayı siler; Binance TR hesabındaki anahtarı ayrıca iptal etmelisiniz. API anahtarlarını sohbet veya GitHub'a göndermeyin. Geliştirme, testler ve Linux için [kurulum notlarına](docs/setup.md) bakın.
 
-Windows 11 cihazında ve gerçek Binance TR hesabıyla doğrulama henüz yapılmadı; uzak erişime veya canlıya açmayın.
+Windows cihazında Binance TR'nin `www.binance.tr` genel saat API'si HTTP 200 dönmüştür; `api.binance.me` piyasa kaynağı HTTP 403 dönmüştür. Gerçek hesap emir/bakiye mutabakatı ve canlı piyasa fiyatı doğrulanmış değildir. Yerel servisi dış erişime açmayın.
 
 ## Piyasa analizi
 
@@ -18,10 +20,10 @@ Yerel panele bağlandıktan sonra **Piyasa analizi ve geçmiş simülasyon** bö
 
 ### Binance TR 403 bağlantı kontrolü (Windows)
 
-Cloudflare Preview genel Binance TR isteği HTTP 403/451 ile engelleniyorsa, PR #32 dalındaki güncel proje klasöründe **`check-binance.cmd` dosyasına çift tıklayın.** Bu, Windows ağından API anahtarı kullanmadan bağlantıyı test eder. Alternatif olarak terminalden şunu çalıştırabilirsiniz:
+Cloudflare Preview genel Binance TR isteği HTTP 403/451 ile engelleniyorsa, güncel `main` klasöründe **`check-binance.cmd` dosyasına çift tıklayın.** Bu, Windows ağından API anahtarı kullanmadan bağlantıyı test eder. Alternatif olarak terminalden şunu çalıştırabilirsiniz:
 
 ```powershell
-cd "B:\\serula-para-main"
+cd "B:\\serula-para-git"
 node scripts/check-binance-network.js
 ```
 
@@ -29,10 +31,10 @@ Klasörünüz farklıysa `cd` yolunu buna göre değiştirin. Çıktıda iki aç
 
 ### Windows'ta gerçek piyasa kontrolü
 
-PR #4 dalının güncel dosyalarını kullanın. Proje klasöründe PowerShell açın ve `node scripts/check-market.js` çalıştırın. Komut yalnızca herkese açık BTC/TRY ve ETH/TRY son işlemlerini ve kapalı saatlik mum sayısını kontrol eder; her iki parite ve zaman damgası listelenirse başarılıdır; API anahtarı veya kasa parolası istemez. Sonrasında `start-para.cmd` ile paneli açıp **Simülasyon → Analiz ve geçmiş test yap** seçin; **Genel Bakış** ekranında BTC/TRY ve ETH/TRY düğmelerini ayrı ayrı deneyin. Fiyat zamanını ve grafiği Binance TR ile karşılaştırın. Hata varsa internet bağlantısını ve Windows saat eşitlemesini kontrol edin. Gerçek emirler kapalıdır; şifreleri ve anahtarları paylaşmayın.
+Güncel `main` dalındaki dosyaları kullanın. Proje klasöründe PowerShell açın ve `node scripts/check-market.js` çalıştırın. Komut yalnızca herkese açık BTC/TRY ve ETH/TRY son işlemlerini ve kapalı saatlik mum sayısını kontrol eder; her iki parite ve zaman damgası listelenirse başarılıdır; API anahtarı veya kasa parolası istemez. Sonrasında `start-para.cmd` ile paneli açıp **Simülasyon → Analiz ve geçmiş test yap** seçin; **Genel Bakış** ekranında BTC/TRY ve ETH/TRY düğmelerini ayrı ayrı deneyin. Fiyat zamanını ve grafiği Binance TR ile karşılaştırın. Hata varsa internet bağlantısını ve Windows saat eşitlemesini kontrol edin. Gerçek emirler kapalıdır; şifreleri ve anahtarları paylaşmayın.
 
 ### Deneysel yerel AI analizi
 
-Windows'ta Ollama ve bir yerel model ayrıca kurulup çalıştırıldıktan sonra, PowerShell'de ` $env:PARA_OLLAMA_MODEL = "kurulu-model-adi" ` ayarlayıp aynı pencereden `.\start-para.cmd` çalıştırın. Önce piyasa analizi alın, sonra **AI Kararları → AI Trading Analyst** alanında analizi başlatın. Model istekleri yalnızca `127.0.0.1:11434` adresine ve halka açık piyasa verileriyle yapılır; API/kasa bilgileri gönderilmez. Doğrulanmış haber ve risk verileri henüz mevcut olmadığından nihai sonuç **BEKLE** olur. Model yoksa veya veri eskiyse sistem BEKLE'ye döner. Beş yerel model isteği bilgisayar kaynağı tüketir; bulut API bağlantısı yoktur. AI geçmişi yerel veritabanındadır; gösterilen geçmiş simülasyon AI performansı değildir. Ayrıntılar: [değerlendirme](docs/tradingagents-assessment.md).
+Windows'ta Ollama ve bir yerel model ayrıca kurulup çalıştırıldıktan sonra, PowerShell'de ` $env:PARA_OLLAMA_MODEL = "kurulu-model-adi" ` ayarlayıp aynı pencereden `.\start-para.cmd` çalıştırın. Önce piyasa analizi alın, sonra **AI Kararları → AI Trading Analyst** alanında analizi başlatın. Model istekleri yalnızca `127.0.0.1:11434` adresine ve halka açık piyasa verileriyle yapılır; API/kasa bilgileri gönderilmez. Doğrulanmış haber ve risk verileri henüz mevcut olmadığından nihai sonuç **BEKLE** olur. Model yoksa veya veri eskiyse sistem BEKLE'ye döner. Beş yerel model isteği bilgisayar kaynağı tüketir; OpenAI/Gemini ve diğer AI sağlayıcıları için bulut bağlantı kodu bulunur; gerçek kullanıcı anahtarlarıyla uçtan uca doğrulama ayrı bir kontroldür. AI geçmişi yerel veritabanındadır; gösterilen geçmiş simülasyon AI performansı değildir. Ayrıntılar: [değerlendirme](docs/tradingagents-assessment.md).
 
 Ollama ve kurulu modelin yapılandırılmış JSON çıktısını sınamak için aynı PowerShell penceresinde `node scripts/check-ollama.js` çalıştırın. Bu kontrol BTC/TRY ve ETH/TRY için **sentetik** mumlar kullanır, gerçek piyasa veya performans testi değildir; iki parite için `completed:true` ve `BEKLE` beklenir. Model etiketleri değişebilir; kaydedilen isim model dosyasının kriptografik sürüm kanıtı değildir. Model veya servis yanıt vermiyorsa komut başarısız çıkar. Gerçek Binance TR verisini ayrıca `node scripts/check-market.js` ile kontrol edin.

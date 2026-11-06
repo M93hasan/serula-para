@@ -1,5 +1,13 @@
 # Windows yerel kurulum
 
+> **06.11.2026 güncel durum:** Bu sayfa **main** sürümündeki yerel Binance kasası için geçerlidir. Parolasız Windows Binance DPAPI geçişi [PR #50](https://github.com/M93hasan/serula-para/pull/50), Local/Web ve OTP [PR #49](https://github.com/M93hasan/serula-para/pull/49) içinde taslaktır; main'de etkin değildir. [Görev #54 durum raporu](TASK_54_STATUS_2026-11-06.md) ve CI sonuçlarını kontrol edin.
+>
+> Gerçek emir gönderimi ve para çekme yetkisi **KAPALIDIR**. API anahtarını hiçbir zaman sohbet/GitHub'a aktarmayın; `%USERPROFILE%\.para` içeriğini değiştirmeyin veya silmeyin. `api.binance.me` üzerinden fiyat kontrolü Windows'ta HTTP 403 gördüğünden **gerçek canlı fiyatlar doğrulanmış değildir**.
+
+### Güvenli Windows 11 kontrolü
+
+PowerShell veya CMD'de proje klasörüne geçin (CMD için `cd /d B:\serula-para-git`, PowerShell için `cd B:\serula-para-git`). Mevcut değişikliklerinizi koruyun: `git status` çalıştırın, sonra `npm ci`, `npm test`, `npm run build`. Salt okunur Binance ağ testi için `node scripts/check-binance-network.js` kullanılabilir. `REAL_ORDERS_ENABLED=false` kalmalıdır. 30 dakikalık offline dayanıklılık adımları için [Windows doğrulama matrisi](WINDOWS_11_VALIDATION_2026-11-06.md) geçerlidir. Bu adımlar **gerçek emir veya gerçek hesap E2E doğrulaması değildir**.
+
 Tek adımlı başlatma: proje klasöründe `start-para.cmd` dosyasını çalıştırın; ayrıntılar README dosyasındadır. Aşağıdaki adımlar manuel alternatiftir.
 
 Node.js 22.13+ kurun. PowerShell: `npm ci`, `npm test`, `npm run build`. SQLite bazı Node sürümlerinde deneysel uyarı gösterebilir.

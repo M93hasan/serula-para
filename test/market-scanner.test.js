@@ -79,3 +79,55 @@ test('a sharp move blocks a scan candidate and a future quote is rejected', asyn
   assert.match(sharp.reason, /oynaklık/);
   assert.equal(future.status, 'unavailable');
 });
+
+test('Binance TR 403 stops before second symbol or any follow-up request',async()=>{
+  let calls=0;
+  const scanner=new MarketScanner({
+    universe:{discover:async()=>({exchangeTime:now,markets:[
+      {symbol:'BTC_TRY',type:1},{symbol:'ETH_TRY',type:1},{symbol:'SOL_TRY',type:1}
+    ]})},
+    clock:()=>now,sleep:async()=>{},
+    fetchImpl:async()=>{calls++;return new Response('',{status:403});}
+  });
+  scanner.start();await settle(scanner);
+  assert.equal(scanner.status().status,'WAF_BLOCKED');
+  assert.equal(scanner.status().results.length,0);
+  assert.equal(calls,1);
+  const auto=new ScanAutomation(scanner,{clock:()=>now+60000});
+  assert.throws(()=>auto.setEnabled(true),/REQUIRES_MANUAL_REVIEW/);
+  assert.equal(auto.status().enabled,false);
+  assert.equal(calls,1);
+});
+test('automatic scan turns off after a WAF failure without moving to later pairs',async()=>{
+  let calls=0;
+  const scanner=new MarketScanner({
+    universe:{discover:async()=>({exchangeTime:now,markets:[{symbol:'BTC_TRY',type:1},{symbol:'ETH_TRY',type:1}]})},
+    clock:()=>now,sleep:async()=>{},fetchImpl:async()=>{calls++;return new Response('',{status:403});}
+  });
+  const auto=new ScanAutomation(scanner,{clock:()=>now,pollMs:15000});
+  auto.setEnabled(true);await settle(scanner);auto.tick();
+  assert.equal(scanner.status().status,'WAF_BLOCKED');
+  assert.equal(auto.status().enabled,false);
+  assert.equal(auto.status().lastError,'WAF_BLOCKED');
+  assert.equal(calls,1);
+  auto.close();
+});
+
+test('partial candidates are discarded if a later Binance market gets WAF 403',async()=>{
+  let calls=0;
+  const scan=new MarketScanner({
+    universe:{discover:async()=>({exchangeTime:now,markets:[{symbol:'BTC_TRY',type:1},{symbol:'ETH_TRY',type:1}]})},
+    clock:()=>now,sleep:async()=>{},
+    fetchImpl:async(url)=>{
+      calls++;
+      if(calls===4)return new Response('',{status:403});
+      const data=url.includes('klines')?candles.map(c=>[c.time,c.open,c.high,c.low,c.close,c.volume,c.closeTime,c.quoteVolume]):
+        url.includes('depth')?book:[{price:'140',time:now-1000}];
+      return Response.json(data);
+    }
+  });
+  scan.start();await settle(scan);
+  assert.equal(scan.status().status,'WAF_BLOCKED');
+  assert.equal(scan.status().results.length,0);
+  assert.equal(calls,4);
+});
