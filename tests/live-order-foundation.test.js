@@ -1,4 +1,7 @@
 import test from 'node:test';
+import {mkdtempSync,rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
 import assert from 'node:assert/strict';
 import {assertValidLimitOrder,multipleOf} from '../engine/order-rules.js';
 import {LiveOrderJournal} from '../engine/live-order-journal.js';
@@ -123,4 +126,19 @@ test('trusted inputs require withdraw-disabled account and nonstale snapshots',a
  assert.deepEqual(result.balances,balances);
  withdraw=1;
  await assert.rejects(load(order.symbol),/ACCOUNT_PERMISSIONS_UNSAFE/);
+});
+
+test('journal survives process restart and keeps unresolved order blocked',()=>{
+ const dir=mkdtempSync(join(tmpdir(),'para-order-'));
+ try{
+  const path=join(dir,'orders.sqlite');
+  let db=new LiveOrderJournal(path);
+  db.reserve({...order,notional:'200'});
+  db.setStatus(order.clientId,'UNKNOWN');
+  db.close();
+  db=new LiveOrderJournal(path);
+  assert.equal(db.get(order.clientId).status,'UNKNOWN');
+  assert.throws(()=>db.reserve({...order,clientId:'para_new_0004',notional:'200'}),/DUPLICATE_ACTIVE_ORDER/);
+  db.close();
+ }finally{rmSync(dir,{recursive:true,force:true});}
 });
