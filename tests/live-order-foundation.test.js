@@ -2,6 +2,7 @@ import test from 'node:test';
 import {mkdtempSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';
 import {join} from 'node:path';
+import {createHmac} from 'node:crypto';
 import assert from 'node:assert/strict';
 import {assertValidLimitOrder,multipleOf} from '../engine/order-rules.js';
 import {LiveOrderJournal} from '../engine/live-order-journal.js';
@@ -80,6 +81,7 @@ test('signed client uses only allowlisted paths and never withdrawal routes',asy
  assert.deepEqual(seen.map(x=>new URL(x.url).pathname),['/open/v1/orders','/open/v1/orders/detail','/open/v1/orders/cancel']);
  assert.deepEqual(seen.map(x=>x.opts.method),['POST','GET','POST']);
  assert.ok(seen.every(x=>new URL(x.url).searchParams.has('signature')&&x.opts.headers['X-MBX-APIKEY']==='test-key'));
+ for(const entry of seen){const u=new URL(entry.url),expected=u.searchParams.get('signature');u.searchParams.delete('signature');assert.equal(expected,createHmac('sha256','test-secret').update(u.searchParams.toString()).digest('hex'));}
  assert.ok(seen.every(x=>!x.url.includes('withdraw')));
 });
 
