@@ -7,7 +7,7 @@ const headers={'Content-Type':'application/json; charset=utf-8','Cache-Control':
 const json=(data,status=200)=>new Response(JSON.stringify(data),{status,headers});
 const loginPage=`<!doctype html><html lang="tr"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PARA | Google ile giriş</title><body style="background:#080808;color:#eee;font:16px system-ui;max-width:36rem;margin:12vh auto;padding:24px"><h1>PARA Trading</h1><p>Güvenli erişim için Google hesabınla giriş yap.</p><p><a style="display:inline-block;background:#fff;color:#111;padding:14px 18px;border-radius:8px;text-decoration:none" href="/auth/google/login">Google ile giriş yap</a></p><p>Yalnızca izinli test hesabı erişebilir. API anahtarını veya kasa parolanı buraya girme.</p></body></html>`;
 async function boundedJson(request){const reader=request.body?.getReader();if(!reader)throw Error('INVALID');let chunks=[],size=0;try{while(true){const {done,value}=await reader.read();if(done)break;size+=value.byteLength;if(size>2048){await reader.cancel();throw Error('INVALID');}chunks.push(value);}const data=new Uint8Array(size);let offset=0;for(const chunk of chunks){data.set(chunk,offset);offset+=chunk.length;}return JSON.parse(new TextDecoder().decode(data));}finally{reader.releaseLock();}}
-export function createWorker({ verify=verifyGoogleSession, market=()=>new MarketData(), googleStart=startGoogle, googleFinish=finishGoogle }={}) { return {
+export function createWorker({ verify=verifyGoogleSession, market=()=>new MarketData(), googleStart=startGoogle, googleFinish=finishGoogle, binanceReader=readBinanceAccount }={}) { return {
  async fetch(request,env){
   const url=new URL(request.url);
   if(url.pathname==='/api/health')return json({status:'google-auth-required',real_orders_enabled:false});
@@ -27,7 +27,7 @@ export function createWorker({ verify=verifyGoogleSession, market=()=>new Market
     const rate=await env.ANALYSIS_LIMIT.limit({key:identity.id+':binance-read'});if(!rate.success)return json({error:'RATE_LIMIT'},429);
     let input;try{input=await boundedJson(request);}catch{return json({error:'INVALID_INPUT'},400);}
     if(!input||typeof input!=='object'||Array.isArray(input)||Object.keys(input).some(k=>!['apiKey','secretKey'].includes(k)))return json({error:'INVALID_INPUT'},400);
-    try{const account=await readBinanceAccount(input);return json(account);}
+    try{const account=await binanceReader(input);return json(account);}
     catch(error){const known=['INVALID_CREDENTIALS','EXCHANGE_UNAVAILABLE','EXCHANGE_RATE_LIMIT','EXCHANGE_READ_FAILED','INVALID_EXCHANGE_RESPONSE'];const code=known.includes(error.message)?error.message:'EXCHANGE_READ_FAILED';return json({error:code},code==='INVALID_CREDENTIALS'?400:code==='EXCHANGE_RATE_LIMIT'?429:502);}
   }
   if(url.pathname==='/api/analysis'&&request.method==='POST'){
