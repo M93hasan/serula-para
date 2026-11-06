@@ -5,7 +5,7 @@ import { existsSync, readFileSync, readdirSync, statSync, unlinkSync } from 'nod
 import { join } from 'node:path';
 
 const DATABASES=['simulation.sqlite','paper.sqlite','account-observations.sqlite'];
-const VAULTS=['binance-tr.vault'];
+const VAULTS=['binance-tr.vault',...['openai','ollama_cloud','anthropic','gemini','deepseek'].map(x=>join('ai-providers',x+'.vault'))];
 export function verifyLocalData(directory){
  const sqlite=[],vaults=[];
  for(const name of DATABASES){
