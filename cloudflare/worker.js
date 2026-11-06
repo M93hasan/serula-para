@@ -1,20 +1,23 @@
-import { verifyAccess } from './access.js';
+import { startGoogle, finishGoogle, verifyGoogleSession, logoutGoogle } from './google-auth.js';
 import { MarketData } from '../engine/market-data.js';
 import { decide, selectMarket } from '../engine/decision.js';
 import { backtest } from '../engine/backtest.js';
 const headers={'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'};
 const json=(data,status=200)=>new Response(JSON.stringify(data),{status,headers});
-const loginPage=`<!doctype html><html lang="tr"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PARA | Güvenli giriş</title><body style="background:#080808;color:#eee;font:16px system-ui;max-width:36rem;margin:12vh auto;padding:24px"><h1>PARA · Güvenli giriş</h1><p>Bu test sürümü Cloudflare Access ile kimlik doğrulaması gerektirir.</p><p>Google ile giriş, Cloudflare Access kimlik sağlayıcısı ve izin politikası etkinse kullanılabilir.</p><p><a style=\"color:#93c5fd\" href=\"/cdn-cgi/access/login\">Google ile giriş / Cloudflare Access</a></p><p>Giriş çalışmıyorsa proje yöneticisinin Google sağlayıcısını ve erişim iznini yapılandırması gerekir.</p><p>API anahtarınızı veya kasa parolanızı buraya girmeyin.</p></body></html>`;
+const loginPage=`<!doctype html><html lang="tr"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PARA | Google ile giriş</title><body style="background:#080808;color:#eee;font:16px system-ui;max-width:36rem;margin:12vh auto;padding:24px"><h1>PARA Trading</h1><p>Güvenli erişim için Google hesabınla giriş yap.</p><p><a style="display:inline-block;background:#fff;color:#111;padding:14px 18px;border-radius:8px;text-decoration:none" href="/auth/google/login">Google ile giriş yap</a></p><p>Yalnızca izinli test hesabı erişebilir. API anahtarını veya kasa parolanı buraya girme.</p></body></html>`;
 async function boundedJson(request){const reader=request.body?.getReader();if(!reader)throw Error('INVALID');let chunks=[],size=0;try{while(true){const {done,value}=await reader.read();if(done)break;size+=value.byteLength;if(size>2048){await reader.cancel();throw Error('INVALID');}chunks.push(value);}const data=new Uint8Array(size);let offset=0;for(const chunk of chunks){data.set(chunk,offset);offset+=chunk.length;}return JSON.parse(new TextDecoder().decode(data));}finally{reader.releaseLock();}}
-export function createWorker({ verify=verifyAccess, market=()=>new MarketData() }={}) { return {
+export function createWorker({ verify=verifyGoogleSession, market=()=>new MarketData(), googleStart=startGoogle, googleFinish=finishGoogle }={}) { return {
  async fetch(request,env){
   const url=new URL(request.url);
-  if(url.pathname==='/api/health')return json({status:'access-required',real_orders_enabled:false});
-  let identity;try{identity=await verify(request.headers.get('Cf-Access-Jwt-Assertion'),env);}catch{
+  if(url.pathname==='/api/health')return json({status:'google-auth-required',real_orders_enabled:false});
+  if(url.pathname==='/auth/google/login'&&request.method==='GET')return googleStart(request,env);
+  if(url.pathname==='/auth/google/callback'&&request.method==='GET')return googleFinish(request,env);
+  if(url.pathname==='/auth/logout')return logoutGoogle(request);
+  let identity;try{identity=await verify(request,env);}catch{
     if(url.pathname.startsWith('/api/'))return json({error:'AUTH_REQUIRED'},401);
     return new Response(loginPage,{status:401,headers:{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'"}});
   }
-  if(url.pathname==='/api/auth/me'&&request.method==='GET')return json({authenticated:true});
+  if(url.pathname==='/api/auth/me'&&request.method==='GET')return json({authenticated:true,email:identity.email||null});
   if(url.pathname==='/status'&&request.method==='GET')return json({mode:'web-research',realOrdersEnabled:false,halted:true});
   if(url.pathname==='/api/analysis'&&request.method==='POST'){
     if(request.headers.get('Origin')!==url.origin||request.headers.get('Sec-Fetch-Site')!=='same-origin'||request.headers.get('Content-Type')!=='application/json'||request.headers.get('X-Para-Request')!=='1')return json({error:'FORBIDDEN'},403);
