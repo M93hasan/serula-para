@@ -107,6 +107,16 @@ export function createServer({ token, simulator, paper = null, account = null, a
       try{return res.end(JSON.stringify(await market.prices()));}
       catch(err){const code=err.message==='Stale price'?'STALE_DATA':'MARKET_CONNECTION';return res.writeHead(503).end(JSON.stringify({error:code}));}
     }
+    if(req.method==='GET' && req.url?.startsWith('/api/markets/valuation-prices?')){
+      try {
+        const params=new URL(req.url,origin).searchParams;
+        if([...params.keys()].some(key=>key!=='assets'))return res.writeHead(400).end('{"error":"INVALID_ASSETS"}');
+        const raw=params.get('assets')||'';
+        if(raw.length>1000)return res.writeHead(400).end('{"error":"INVALID_ASSETS"}');
+        const assets=raw?raw.split(','):[];
+        return res.end(JSON.stringify({markets:await market.valuationPrices(assets)}));
+      }catch(err){const code=err.message==='Invalid assets'?'INVALID_ASSETS':'MARKET_CONNECTION';return res.writeHead(code==='INVALID_ASSETS'?400:503).end(JSON.stringify({error:code}));}
+    }
     if(req.method==='GET' && req.url==='/api/markets/universe') {try{return res.end(JSON.stringify(await universe.discover()));}catch{return res.writeHead(503).end('{"error":"market catalogue unavailable"}');}}
     if(req.method==='GET' && req.url==='/api/markets/scan/auto')return res.end(JSON.stringify(scanAutomation.status()));
     if(req.method==='POST' && req.url==='/api/markets/scan/auto') {
@@ -182,7 +192,9 @@ export function createServer({ token, simulator, paper = null, account = null, a
           try{
             const now=Date.now();
             const scannerPrices=scanner.status().results.filter(x=>x.priceTime&&x.symbol?.endsWith('_TRY'));
-            const v=valuePortfolio(balances,[...latestMarkets,...scannerPrices],now);
+            let valuationMarkets=[];
+            try{valuationMarkets=await market.valuationPrices(balances.filter(a=>Number(a.free)>0||Number(a.locked)>0).map(a=>a.asset));}catch{}
+            const v=valuePortfolio(balances,[...latestMarkets,...scannerPrices,...valuationMarkets],now);
             valueHistory=accountHistory.save({
               estimatedTry:v.complete?v.subtotal:null,
               missingAssets:v.missing,
