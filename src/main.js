@@ -232,12 +232,40 @@ $('#ai-measure').addEventListener('click',async()=>{try{const r=await api('/api/
 $('#ai-run').addEventListener('click',async()=>{const btn=$('#ai-run');btn.disabled=true;text('#ai-status','Yerel model çalışıyor…');try{const result=await api('/api/ai/analyze',{symbol:pair});showAI(result);await refreshAIHistory();text('#ai-status',result.errorCode?result.reason+' ('+result.errorCode+')':'AI araştırma analizi tamamlandı; güvenlik kararı BEKLE.');}catch{text('#ai-status','AI servisi kullanılamıyor; karar BEKLE.');}finally{btn.disabled=!token;}});
 
 if(webMode){
-  $('#local-token').disabled=true;$('#local-login button').disabled=true;
+  // Web and local engine are different trust boundaries. Google web login never unlocks a local vault.
+  $('#local-login').hidden=true;
+  googleBox.hidden=true;
+  const connectionPanel=$('#local-login').closest('article');
+  connectionPanel.querySelector('.eyebrow').textContent='WEB OTURUMU';
+  connectionPanel.querySelector('h3').textContent='Google ile güvenli giriş';
+  connectionPanel.querySelector('h3').nextElementSibling.textContent='Bu web sürümü Google hesabınızla korunur. Windows yerel motoru ve şifreli Binance TR kasası bu oturumdan açılamaz.';
   for(const id of ['tr-key','tr-secret','tr-pass','tr-save','tr-test','tr-change','tr-delete','local-halt','ai-run']){const el=$(`#${id}`);if(el)el.disabled=true;}
-  text('#local-status','Web girişi Cloudflare Access üzerinden korunur. Google ile girişin çalışması için yöneticinin Google kimlik sağlayıcısını etkinleştirmesi gerekir.');
-  const cloudLogin=document.createElement('a');cloudLogin.href='/cdn-cgi/access/login';cloudLogin.textContent='Google ile giriş / Cloudflare Access';cloudLogin.className='primary';$('#local-login').before(cloudLogin);
-  text('#tr-state','Binance TR hesap bağlantısı ve şifreli kasa web sürümünde henüz kullanılamıyor.');
+  text('#local-status','Google web oturumu kontrol ediliyor…');
+  text('#tr-state','Binance TR hesap bağlantısı ve şifreli kasa yalnız yerel bilgisayarda kullanılabilir.');
   text('#ai-status','AI analizi web sürümünde henüz kullanılamıyor.');
-  fetch('/api/auth/me',{cache:'no-store'}).then(r=>{if(!r.ok)throw Error('no session');return r.json();}).then(()=>{token='web-session';$('#analysis-run').disabled=false;$('#analysis-auto').disabled=false;text('#analysis-status','Web araştırma analizi başlatılabilir.');}).catch(()=>{text('#local-status','Web oturumu doğrulanamadı.');});
-  const logout=document.createElement('a');logout.href='/cdn-cgi/access/logout';logout.textContent='Çıkış yap';logout.className='status-pill';logout.addEventListener('click',e=>{if(!confirm('Cloudflare Access oturumlarınızdan çıkış yapılacak. Devam edilsin mi?'))e.preventDefault();});document.querySelector('.top-actions').append(logout);
+  const logout=document.createElement('button');
+  logout.type='button';logout.textContent='Çıkış yap';logout.className='status-pill';logout.disabled=true;
+  logout.addEventListener('click',async()=>{
+    if(!confirm('Google web oturumunuz kapatılsın mı?'))return;
+    logout.disabled=true;
+    try{
+      const response=await fetch('/auth/logout',{method:'POST',headers:{'X-Para-Request':'1'},credentials:'same-origin',cache:'no-store'});
+      if(!response.ok)throw Error('LOGOUT_FAILED');
+      location.assign('/');
+    }catch{logout.disabled=false;text('#local-status','Çıkış yapılamadı. Tekrar deneyin.');}
+  });
+  document.querySelector('.top-actions').append(logout);
+  fetch('/api/auth/me',{cache:'no-store',credentials:'same-origin'})
+    .then(r=>{if(!r.ok)throw Error('no session');return r.json();})
+    .then(user=>{
+      token='web-session';
+      text('#local-status',user.email?'Google oturumu açık: '+user.email:'Google oturumu açık.');
+      logout.disabled=false;
+      $('#analysis-run').disabled=false;$('#analysis-auto').disabled=false;
+      text('#analysis-status','Web araştırma analizi başlatılabilir.');
+    }).catch(()=>{
+      token='';
+      text('#local-status','Web oturumu doğrulanamadı. Yeniden Google ile giriş yapın.');
+      const login=document.createElement('a');login.href='/auth/google/login';login.textContent='Google ile giriş yap';login.className='primary';connectionPanel.append(login);
+    });
 }
