@@ -14,7 +14,7 @@ function setup({status='complete',decision={symbol:'BTC_TRY',action:'AL',time:no
  return {mode,events};
 }
 test('autonomous research logs BEKLE and does not execute an order',async()=>{
- const {mode,events}=setup();mode.setEnabled(true);await mode.tick();
+ const {mode,events}=setup();mode.setEnabled(true);await new Promise(resolve=>setImmediate(resolve));
  assert.equal(events.length,1);
  assert.equal(events[0].action,'BEKLE');
  assert.equal(events[0].proposedAction,'AL');
@@ -23,14 +23,14 @@ test('autonomous research logs BEKLE and does not execute an order',async()=>{
  mode.close();
 });
 test('missing risk data halts research and simulator',async()=>{
- const {mode,events}=setup({results:[]});mode.setEnabled(true);await mode.tick();
+ const {mode,events}=setup({results:[]});mode.setEnabled(true);await new Promise(resolve=>setImmediate(resolve));
  assert.equal(mode.status().enabled,false);
  assert.equal(mode.status().haltReason,'NO_SAFE_CANDIDATE');
  assert.deepEqual(events,['halt']);
 });
 test('AI timeout fails closed and records no misleading signal',async()=>{
  const {mode,events}=setup({decision:{symbol:'BTC_TRY',action:'BEKLE',errorCode:'MODEL_TIMEOUT'}});
- mode.setEnabled(true);await mode.tick();
+ mode.setEnabled(true);await new Promise(resolve=>setImmediate(resolve));
  assert.equal(mode.status().enabled,false);
  assert.equal(mode.status().haltReason,'AI_UNAVAILABLE');
  assert.deepEqual(events,['halt']);
