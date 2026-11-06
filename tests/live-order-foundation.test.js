@@ -17,7 +17,7 @@ const inputs={symbolInfo,balances,market:{price:100000,priceTime:now-1000},now,m
 const remote=(status,executedQty='0')=>({clientId:order.clientId,symbol:order.symbol,status,origQty:order.quantity,executedQty,executedQuoteQty:executedQty==='0'?'0':String(Number(executedQty)*100000),orderId:'42'});
 
 test('exact limits, price age, available-only balance and risk cap',()=>{
- assert.equal(assertValidLimitOrder({order,...inputs}).notional,'200.000000');
+ assert.equal(assertValidLimitOrder({order,...inputs}).notional,'200.000');
  assert.equal(multipleOf('0.002','0.001','0.001'),true);
  for(const altered of [
   {order:{...order,price:'100000.001'}},
