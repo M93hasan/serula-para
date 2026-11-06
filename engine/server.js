@@ -33,6 +33,7 @@ export function createServer({ token, simulator, paper = null, account = null, a
   let latestMarkets=[];
   let latestScanDecision=null;
   let haltGeneration=0;
+  let emergencyStopped=false;
   const cloudAI=cloudAIService||(aiProviders?new CloudAIService({vault:aiProviders}):null);
   const scanAutomation = new ScanAutomation(scanner);
   const autonomousResearch = new AutonomousResearch({scanner,analyst:ai,store:simulator,paper});
@@ -66,6 +67,7 @@ export function createServer({ token, simulator, paper = null, account = null, a
     }
     if(req.method==='GET' && req.url==='/status') return res.end(JSON.stringify(simulator.status()));
     if(req.method==='POST' && req.url==='/api/ai/providers/analyze') {
+      if(emergencyStopped)return res.writeHead(409).end('{"error":"EMERGENCY_HALT"}');
       if(req.headers.origin!==origin||req.headers['sec-fetch-site']!=='same-origin'||req.headers['content-type']!=='application/json'||req.headers['x-para-request']!=='1')return res.writeHead(403).end('{"error":"forbidden"}');
       if(!cloudAI)return res.writeHead(503).end('{"error":"provider unavailable"}');
       try{let body='',size=0;for await(const c of req){size+=c.length;if(size>2048)return res.writeHead(413).end('{"error":"too large"}');body+=c.toString('utf8');}
@@ -100,6 +102,7 @@ export function createServer({ token, simulator, paper = null, account = null, a
     }
     if(req.method==='GET'&&req.url==='/api/ai/autonomous')return res.end(JSON.stringify(autonomousResearch.status()));
     if(req.method==='POST'&&req.url==='/api/ai/autonomous'){
+      if(emergencyStopped)return res.writeHead(409).end('{"error":"EMERGENCY_HALT"}');
       if(req.headers.origin!==origin||req.headers['sec-fetch-site']!=='same-origin'||req.headers['content-type']!=='application/json'||req.headers['x-para-request']!=='1')return res.writeHead(403).end('{"error":"forbidden"}');
       try {
         let body='',size=0;for await(const c of req){size+=c.length;if(size>128)return res.writeHead(413).end('{"error":"too large"}');body+=c.toString('utf8');}
@@ -117,6 +120,7 @@ export function createServer({ token, simulator, paper = null, account = null, a
       }catch{return res.writeHead(503).end('{"error":"readiness unavailable"}');}
     }
     if(req.method==='POST' && ['/api/paper/start','/api/paper/stop'].includes(req.url)) {
+      if(emergencyStopped&&req.url.endsWith('/start'))return res.writeHead(409).end('{"error":"EMERGENCY_HALT"}');
       if(req.headers.origin!==origin||req.headers['sec-fetch-site']!=='same-origin'||req.headers['content-type']!=='application/json'||req.headers['x-para-request']!=='1')return res.writeHead(403).end('{"error":"forbidden"}');
       if(!paper)return res.writeHead(503).end('{"error":"paper unavailable"}');
       try{if(req.url.endsWith('/start'))paper.start();else paper.halt();return res.end(JSON.stringify({status:paper.status()}));}catch{return res.writeHead(503).end('{"error":"paper unavailable"}');}
@@ -156,6 +160,7 @@ export function createServer({ token, simulator, paper = null, account = null, a
     if(req.method==='GET' && req.url==='/api/markets/universe') {try{return res.end(JSON.stringify(await universe.discover()));}catch{return res.writeHead(503).end('{"error":"market catalogue unavailable"}');}}
     if(req.method==='GET' && req.url==='/api/markets/scan/auto')return res.end(JSON.stringify(scanAutomation.status()));
     if(req.method==='POST' && req.url==='/api/markets/scan/auto') {
+      if(emergencyStopped)return res.writeHead(409).end('{"error":"EMERGENCY_HALT"}');
       if(req.headers.origin!==origin||req.headers['sec-fetch-site']!=='same-origin'||req.headers['content-type']!=='application/json'||req.headers['x-para-request']!=='1')return res.writeHead(403).end('{"error":"forbidden"}');
       try{
         let body='',size=0;for await(const c of req){size+=c.length;if(size>256)return res.writeHead(413).end('{"error":"too large"}');body+=c.toString('utf8');}
@@ -167,15 +172,18 @@ export function createServer({ token, simulator, paper = null, account = null, a
     }
     if(req.method==='GET' && req.url==='/api/markets/scan') {const state=scanner.status();return res.end(JSON.stringify({...state,results:state.results.map(({candles,...item})=>item)}));}
     if(req.method==='POST' && req.url==='/api/markets/scan') {
+      if(emergencyStopped)return res.writeHead(409).end('{"error":"EMERGENCY_HALT"}');
       if(req.headers.origin!==origin||req.headers['sec-fetch-site']!=='same-origin'||req.headers['content-type']!=='application/json'||req.headers['x-para-request']!=='1')return res.writeHead(403).end('{"error":"forbidden"}');
       try{scanner.start();return res.writeHead(202).end('{"status":"running"}');}catch{return res.writeHead(429).end('{"error":"scan busy or cooldown"}');}
     }
     if(req.method==='POST' && req.url==='/api/ai/scan-best') {
+      if(emergencyStopped)return res.writeHead(409).end('{"error":"EMERGENCY_HALT"}');
       if(req.headers.origin!==origin||req.headers['sec-fetch-site']!=='same-origin'||req.headers['content-type']!=='application/json'||req.headers['x-para-request']!=='1')return res.writeHead(403).end('{"error":"forbidden"}');
       try{const state=scanner.status(),catalog=await universe.discover();const candidate=state.results.filter(x=>x.status==='candidate'&&Date.now()-x.asOf<300000&&catalog.markets.some(m=>m.symbol===x.symbol&&m.type===1)).sort((a,b)=>a.indicators.estimatedRoundTripCost-b.indicators.estimatedRoundTripCost)[0];if(!candidate)return res.writeHead(409).end('{"error":"no fresh candidate"}');const analysisGeneration=haltGeneration;const result=await ai.analyze(candidate,{catalogApproved:true});if(analysisGeneration!==haltGeneration)return res.writeHead(409).end('{"error":"halted"}');result.startedAt=result.time;result.time=Date.now();simulator.saveAI(result);latestScanDecision={decision:result,candidate};return res.end(JSON.stringify(result));}catch{return res.writeHead(503).end('{"error":"ai unavailable"}');}
     }
     if(req.method==='POST' && req.url==='/halt') {
       haltGeneration++;
+      emergencyStopped=true;
       autonomousResearch.setEnabled(false);
       try{scanAutomation.setEnabled(false);}catch{}
       try{scanner.stop?.();}catch{}
@@ -206,6 +214,7 @@ export function createServer({ token, simulator, paper = null, account = null, a
     if(req.method==='GET' && req.url==='/api/ai/history') {try{return res.end(JSON.stringify({history:simulator.aiHistory()}));}catch{return res.writeHead(503).end('{"error":"history unavailable"}');}}
     if(req.method==='GET' && req.url==='/api/ai/performance') {try{return res.end(JSON.stringify(evaluateAIHistory(simulator.aiHistory(),latestMarkets)));}catch{return res.writeHead(503).end('{"error":"performance unavailable"}');}}
     if(req.method==='POST' && req.url==='/api/ai/analyze') {
+      if(emergencyStopped)return res.writeHead(409).end('{"error":"EMERGENCY_HALT"}');
       if(req.headers.origin!==origin || req.headers['sec-fetch-site']!=='same-origin' || req.headers['content-type']!=='application/json' || req.headers['x-para-request']!=='1')return res.writeHead(403).end('{"error":"forbidden"}');
       try{let body='',size=0;for await(const c of req){size+=c.length;if(size>1024)return res.writeHead(413).end('{"error":"too large"}');body+=c.toString('utf8');}const input=JSON.parse(body);
         if(!input||typeof input.symbol!=='string'||!/^[A-Z0-9]{1,20}_[A-Z0-9]{1,20}$/.test(input.symbol)||Object.keys(input).length!==1)throw Error('invalid');
