@@ -7,7 +7,13 @@ const report=await diagnoseLocalBinance();
 console.log('Binance TR public network diagnostic:');
 for(const t of report.targets)console.log(t.name+': '+t.status+(t.httpStatus?' HTTP '+t.httpStatus:''));
 if(report.hasWafBlock){
-  console.log('HTTP 403: Binance TR documents this as a WAF/security block. Stop repeated requests; inspect rate limits, request path, VPN/proxy, and official provider support.');
+  const accountHost=report.targets.find(x=>x.name==='tr-public-time');
+  const marketHost=report.targets.find(x=>x.name==='market-public-time');
+  if(accountHost?.status==='REACHABLE' && marketHost?.status==='WAF_BLOCKED') {
+    console.log('PARTIAL CONNECTIVITY: www.binance.tr is reachable, but Binance TR market host api.binance.me is blocked (HTTP 403).');
+    console.log('Account/balance read connectivity is distinct from market-price connectivity. BTC_TRY live quote NOT verified.');
+    console.log('No automatic alternate exchange/host, synthetic quote, or real trading should be used. Ask Binance TR support about the blocked market API host.');
+  } else console.log('HTTP 403 WAF block. Do not repeatedly retry blocked endpoints. Contact Binance TR support.');
   process.exitCode=2;
 }else{
   try{
