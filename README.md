@@ -18,7 +18,7 @@ Yerel panele bağlandıktan sonra **Piyasa analizi ve geçmiş simülasyon** bö
 
 ### Binance TR 403 bağlantı kontrolü (Windows)
 
-Cloudflare Preview genel Binance TR isteği HTTP 403/451 ile engelleniyorsa, bilgisayarın kendi ağından ve **API anahtarı girmeden** şunu çalıştırın:
+Cloudflare Preview genel Binance TR isteği HTTP 403/451 ile engelleniyorsa, PR #32 dalındaki güncel proje klasöründe **`check-binance.cmd` dosyasına çift tıklayın.** Bu, Windows ağından API anahtarı kullanmadan bağlantıyı test eder. Alternatif olarak terminalden şunu çalıştırabilirsiniz:
 
 ```powershell
 cd "B:\\serula-para-main"
