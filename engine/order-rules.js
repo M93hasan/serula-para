@@ -2,6 +2,12 @@
 const DEC=/^(?:0|[1-9]\d*)(?:\.\d{1,40})?$/;
 function dec(x){if(typeof x!=='string'||!DEC.test(x))throw Error('INVALID_DECIMAL');const [a,b='']=x.split('.');return {n:BigInt(a+b),s:b.length};}
 function both(a,b){const x=dec(a),y=dec(b),s=Math.max(x.s,y.s);return [x.n*10n**BigInt(s-x.s),y.n*10n**BigInt(s-y.s)];}
+export function canonicalDecimal(value){
+  const x=dec(value),digits=x.n.toString().padStart(x.s+1,'0');
+  if(!x.s)return digits;
+  const fraction=digits.slice(-x.s).replace(/0+$/,'');
+  return fraction?digits.slice(0,-x.s)+'.'+fraction:digits.slice(0,-x.s);
+}
 export function compareDecimal(a,b){const [x,y]=both(a,b);return x<y?-1:x>y?1:0;}
 export function multipleOf(value,step,offset='0'){const [v,o]=both(value,offset),s=Math.max(dec(value).s,dec(step).s,dec(offset).s),z=10n**BigInt(s);const n=dec(value),b=dec(offset),t=dec(step);const vn=n.n*z/10n**BigInt(n.s),on=b.n*z/10n**BigInt(b.s),tn=t.n*z/10n**BigInt(t.s);return tn>0n&&vn>=on&&(vn-on)%tn===0n;}
 export function multiplyDecimal(a,b){const x=dec(a),y=dec(b);const n=x.n*y.n,s=x.s+y.s,str=n.toString().padStart(s+1,'0');if(!s)return str;return str.slice(0,-s)+'.'+str.slice(-s);}
