@@ -12,7 +12,8 @@ const fingerprint = value => createHash('sha256').update(value).digest('hex');
 const SCRIPT = String.raw`
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Security
-$payload = [Console]::In.ReadLine() | ConvertFrom-Json
+$payload = $env:PARA_DPAPI_PAYLOAD | ConvertFrom-Json
+Remove-Item Env:PARA_DPAPI_PAYLOAD -ErrorAction SilentlyContinue
 $entropy = [Convert]::FromBase64String([string]$payload.entropy)
 if ($payload.mode -eq 'protect') {
   $bytes = [Text.Encoding]::UTF8.GetBytes([string]$payload.value)
@@ -31,7 +32,8 @@ export function windowsDpapi({ mode, value, principal, provider }) {
   const result = spawnSync('powershell.exe', [
     '-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(SCRIPT, 'utf16le').toString('base64')
   ], {
-    input: JSON.stringify({ mode, value, entropy }) + '\n', encoding: 'utf8', timeout: 15000,
+    env: { ...process.env, PARA_DPAPI_PAYLOAD: JSON.stringify({ mode, value, entropy }) },
+    encoding: 'utf8', timeout: 15000,
     maxBuffer: 1024 * 1024, windowsHide: true
   });
   if (result.error || result.status !== 0 || !result.stdout) throw Error('WINDOWS_KEYSTORE_UNAVAILABLE');
