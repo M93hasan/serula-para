@@ -16,6 +16,17 @@ Windows 11 cihazında ve gerçek Binance TR hesabıyla doğrulama henüz yapılm
 
 Yerel panele bağlandıktan sonra **Piyasa analizi ve geçmiş simülasyon** bölümünden örnek bütçe, işlem sınırı, kayıp eşiği ve varsayımsal işlem komisyonunu ayarlayıp analiz başlatın. İsterseniz 5 dakikalık otomatik yenilemeyi açın. Sistem iki TRY çiftinden son 20 kapalı saatin işlem hacmine göre seçim yapar; kural tabanlı AL/SAT/BEKLE ve gösterge gücü üretir. Güç skoru başarı olasılığı değildir. Backtest analiz başlatılmadan seçilmiş tek parite üzerinde geçmiş verilere uygulanır; otomatik seçim geçmiş testi değiştirmez. Listeleme ve hayatta kalma yanlılıkları devam edebilir; tahmini sonuçlar gerçek kazanç veya garanti değildir. Kayıp eşiği, fiyat sıçramalarında aşılabilir. Gerçek emir özelliği yoktur.
 
+### Binance TR 403 bağlantı kontrolü (Windows)
+
+Cloudflare Preview genel Binance TR isteği HTTP 403/451 ile engelleniyorsa, PR #32 dalındaki güncel proje klasöründe **`check-binance.cmd` dosyasına çift tıklayın.** Bu, Windows ağından API anahtarı kullanmadan bağlantıyı test eder. Alternatif olarak terminalden şunu çalıştırabilirsiniz:
+
+```powershell
+cd "B:\\serula-para-main"
+node scripts/check-binance-network.js
+```
+
+Klasörünüz farklıysa `cd` yolunu buna göre değiştirin. Çıktıda iki açık uç noktanın `OK`, `BLOCKED`, `TIMEOUT` veya `NETWORK_ERROR` durumu görünür. `OK` hesabınızın API izinlerini doğrulamaz; sadece Windows ağından genel API erişimini doğrular. `BLOCKED` çıkarsa güvenlik duvarını veya Binance TR erişim kısıtlamasını aşmaya çalışmayın. Bu test hiçbir API Key veya Secret okumaz, bakiye istemez, gerçek emir göndermez. Gerçek hesap bağlantısı yalnızca Windows yerel motorunda ayrıca ve salt okunur anahtarla denenmelidir.
+
 ### Windows'ta gerçek piyasa kontrolü
 
 PR #4 dalının güncel dosyalarını kullanın. Proje klasöründe PowerShell açın ve `node scripts/check-market.js` çalıştırın. Komut yalnızca herkese açık BTC/TRY ve ETH/TRY son işlemlerini ve kapalı saatlik mum sayısını kontrol eder; her iki parite ve zaman damgası listelenirse başarılıdır; API anahtarı veya kasa parolası istemez. Sonrasında `start-para.cmd` ile paneli açıp **Simülasyon → Analiz ve geçmiş test yap** seçin; **Genel Bakış** ekranında BTC/TRY ve ETH/TRY düğmelerini ayrı ayrı deneyin. Fiyat zamanını ve grafiği Binance TR ile karşılaştırın. Hata varsa internet bağlantısını ve Windows saat eşitlemesini kontrol edin. Gerçek emirler kapalıdır; şifreleri ve anahtarları paylaşmayın.

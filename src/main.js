@@ -92,11 +92,41 @@ $('#workspace-toggle').addEventListener('click',()=>{
 
 document.querySelectorAll('.nav').forEach(x=>x.addEventListener('click',()=>navigate(x.dataset.view)));document.querySelectorAll('[data-goto]').forEach(x=>x.addEventListener('click',()=>navigate(x.dataset.goto)));
 const webMode=location.hostname!=='127.0.0.1'||location.port!=='8788';
-async function api(path,body){if(!token)throw Error('Önce güvenli oturum açın.');let res;try{res=await fetch(path,{method:body?'POST':'GET',headers:{...(!webMode?{Authorization:`Bearer ${token}`}:{}) ,...(body?{'Content-Type':'application/json','X-Para-Request':'1'}:{})},body:body?JSON.stringify(body):undefined,cache:'no-store'});}catch{throw Error('Yerel motora ulaşılamadı.');}if(!res.ok){const payload=await res.json().catch(()=>({}));const analysisErrors={REGION_RESTRICTED:'Binance TR piyasa verisi bu ağ veya bölgeden erişilemiyor. Kendi bağlantınızda tekrar deneyin.',INVALID_RISK:'Bütçe, işlem limiti, zarar eşiği ve komisyon ayarlarını kontrol edin.',INVALID_SYMBOL:'Seçilen parite desteklenmiyor.',CLOCK_INVALID:'Bilgisayar saatini otomatik eşitleyip tekrar deneyin.',RATE_LIMIT:'Çok sık istek gönderildi. En az 30 saniye bekleyip tekrar deneyin.',STALE_DATA:'Piyasa verisi eski veya eksik; daha sonra tekrar deneyin.',MARKET_UNAVAILABLE:'Bu paritenin Binance TR verisi bulunamadı.',MARKET_CONNECTION:'Binance TR piyasa verisine ulaşılamadı. İnternet bağlantısını kontrol edin.'};if(analysisErrors[payload.error])throw Error(analysisErrors[payload.error]);if(payload.error==='AUTH_REQUIRED')throw Error('Oturum sona erdi. Sayfayı yenileyip tekrar giriş yapın.');if(payload.error==='VAULT_UNLOCK_FAILED')throw Error('Kasa açılamadı. Parolanızı kontrol edin.');if(payload.error==='EXCHANGE_READ_FAILED')throw Error('Binance TR hesabına ulaşılamadı. API okuma iznini, ağ bağlantısını ve bilgisayar saatini kontrol edin.');throw Error(res.status===403?'Erişim reddedildi. Yerel bağlantıyı ve yetkiyi kontrol edin.':res.status===503?'Piyasa verisi alınamadı. Ağ, zaman ayarı veya istek sınırını kontrol edin.':'İşlem başarısız. Kasa parolasını ve API izinlerini kontrol edin.');}return res.json();}
+async function api(path,body){if(!token)throw Error('Önce güvenli oturum açın.');let res;try{res=await fetch(path,{method:body?'POST':'GET',headers:{...(!webMode&&token!=='google-session'?{Authorization:`Bearer ${token}`}:{}) ,...(body?{'Content-Type':'application/json','X-Para-Request':'1'}:{})},body:body?JSON.stringify(body):undefined,cache:'no-store'});}catch{throw Error('Yerel motora ulaşılamadı.');}if(!res.ok){const payload=await res.json().catch(()=>({}));const analysisErrors={REGION_RESTRICTED:'Binance TR piyasa verisi bu ağ veya bölgeden erişilemiyor. Kendi bağlantınızda tekrar deneyin.',INVALID_RISK:'Bütçe, işlem limiti, zarar eşiği ve komisyon ayarlarını kontrol edin.',INVALID_SYMBOL:'Seçilen parite desteklenmiyor.',CLOCK_INVALID:'Bilgisayar saatini otomatik eşitleyip tekrar deneyin.',RATE_LIMIT:'Çok sık istek gönderildi. En az 30 saniye bekleyip tekrar deneyin.',STALE_DATA:'Piyasa verisi eski veya eksik; daha sonra tekrar deneyin.',MARKET_UNAVAILABLE:'Bu paritenin Binance TR verisi bulunamadı.',MARKET_CONNECTION:'Binance TR piyasa verisine ulaşılamadı. İnternet bağlantısını kontrol edin.'};if(analysisErrors[payload.error])throw Error(analysisErrors[payload.error]);if(payload.error==='AUTH_REQUIRED')throw Error('Oturum sona erdi. Sayfayı yenileyip tekrar giriş yapın.');if(payload.error==='VAULT_UNLOCK_FAILED')throw Error('Kasa açılamadı. Parolanızı kontrol edin.');if(payload.error==='EXCHANGE_READ_FAILED')throw Error('Binance TR hesabına ulaşılamadı. API okuma iznini, ağ bağlantısını ve bilgisayar saatini kontrol edin.');throw Error(res.status===403?'Erişim reddedildi. Yerel bağlantıyı ve yetkiyi kontrol edin.':res.status===503?'Piyasa verisi alınamadı. Ağ, zaman ayarı veya istek sınırını kontrol edin.':'İşlem başarısız. Kasa parolasını ve API izinlerini kontrol edin.');}return res.json();}
 function setControls(configured){$('#tr-save').disabled=configured;for(const id of ['tr-test','tr-change','tr-delete'])$(`#${id}`).disabled=!configured;}
 function clearKeys(){for(const id of ['tr-key','tr-secret','tr-pass'])$(`#${id}`).value='';}
 function clearBalance(){balances=null;renderPortfolio();}
-$('#local-login').addEventListener('submit',async e=>{e.preventDefault();token=$('#local-token').value;$('#local-token').value='';try{await api('/status');const s=await api('/api/binance-tr/settings');setControls(s.configured);text('#local-status','Yerel motor bağlı · gerçek emirler kapalı');text('#tr-state',s.configured?'Kasa kayıtlı. Bağlantıyı test edin.':'API bilgileri kayıtlı değil.');$('#local-halt').disabled=false;$('#analysis-run').disabled=false;$('#analysis-auto').disabled=false;$('#ai-run').disabled=false;refreshAIHistory().catch(()=>{});text('#analysis-status','Analiz başlatılabilir.');refreshAccountHistory().catch(()=>{});refreshScan().catch(()=>{});}catch(err){token='';setControls(false);$('#tr-save').disabled=true;$('#local-halt').disabled=true;$('#analysis-run').disabled=true;$('#analysis-auto').disabled=true;$('#ai-run').disabled=true;$('#analysis-auto').checked=false;clearBalance();text('#local-status',err.message);}});
+async function activateLocalSession(){
+  try{
+    await api('/status');const s=await api('/api/binance-tr/settings');
+    setControls(s.configured);text('#local-status',token==='google-session'?'Google oturumu açık · yerel motor bağlı':'Yerel motor bağlı · gerçek emirler kapalı');
+    text('#tr-state',s.configured?'Kasa kayıtlı. Bağlantıyı test edin.':'API bilgileri kayıtlı değil.');
+    $('#local-halt').disabled=false;$('#analysis-run').disabled=false;$('#analysis-auto').disabled=false;$('#ai-run').disabled=false;
+    refreshAIHistory().catch(()=>{});loadAIProviders().catch(()=>{});text('#analysis-status','Analiz başlatılabilir.');refreshAccountHistory().catch(()=>{});refreshScan().catch(()=>{});
+    if(token==='google-session')$('#google-logout').hidden=false;
+  }catch(err){
+    token='';setControls(false);$('#tr-save').disabled=true;$('#local-halt').disabled=true;$('#analysis-run').disabled=true;
+    $('#analysis-auto').disabled=true;$('#ai-run').disabled=true;$('#analysis-auto').checked=false;clearBalance();text('#local-status',err.message);
+  }
+}
+$('#local-login').addEventListener('submit',async e=>{e.preventDefault();token=$('#local-token').value;$('#local-token').value='';await activateLocalSession();});
+const googleBox=document.createElement('div');
+googleBox.innerHTML='<button id="google-login" type="button" class="primary full" hidden>Google ile giriş yap</button><button id="google-logout" type="button" class="full" hidden>Google oturumunu kapat</button><p id="google-login-status" role="status">Google girişi kontrol ediliyor.</p>';
+$('#local-login').before(googleBox);
+$('#google-login').addEventListener('click',()=>{location.assign('/auth/google/start');});
+$('#google-logout').addEventListener('click',async()=>{
+  try{await fetch('/auth/google/logout',{method:'POST',headers:{'X-Para-Request':'1'},credentials:'same-origin',cache:'no-store'});}
+  finally{location.reload();}
+});
+if(!webMode){
+  fetch('/auth/google/status',{cache:'no-store'}).then(r=>r.json()).then(async state=>{
+    if(!state.configured){text('#google-login-status','Google girişi bu bilgisayarda henüz yapılandırılmadı. Eski yerel anahtar girişi kullanılabilir.');return;}
+    $('#google-login').hidden=false;text('#google-login-status','Google oturumu yalnızca bu Windows bilgisayarında geçerlidir. Binance kasası ayrıca korunur.');
+    const me=await fetch('/api/auth/me',{cache:'no-store'});
+    if(me.ok){token='google-session';await activateLocalSession();}
+  }).catch(()=>text('#google-login-status','Google oturumu kontrol edilemedi; yerel anahtar girişi kullanılabilir.'));
+}
+
 $('#local-halt').addEventListener('click',async()=>{try{await api('/halt',{});text('#local-status','Acil durdurma etkin · gerçek emirler kapalı');}catch(e){text('#local-status',e.message);}});
 async function saveCredentials(replace){const body={apiKey:$('#tr-key').value,secretKey:$('#tr-secret').value,passphrase:$('#tr-pass').value,replace};clearKeys();clearBalance();try{await api('/api/binance-tr/save',body);setControls(true);text('#tr-state','Kasa kaydedildi. Bağlantıyı test edin.');text('#tr-overview','Bağlı değil');}catch(e){text('#tr-state',e.message);}}
 $('#tr-save').addEventListener('click',()=>saveCredentials(false));$('#tr-change').addEventListener('click',()=>saveCredentials(true));
@@ -135,14 +165,30 @@ async function runAnalysis(){const selected=pair,id=++marketRequest;const quote=
 $('#analysis-run').addEventListener('click',runAnalysis);setInterval(()=>{if(token&&$('#analysis-auto').checked&&!$('#analysis-run').disabled)runAnalysis();},300000);setInterval(()=>{if(balances)renderPortfolio();},30000);createCharts();
 
 // AI and deterministic SMA results are deliberately separate.
-const aiPanel=document.createElement('article');aiPanel.className='panel';aiPanel.innerHTML=`<div class="panel-head"><div><span class="eyebrow">YEREL ÇOKLU AJAN · DENEYSEL</span><h3>AI Trading Analyst</h3><p>Model görüşleri ile kural tabanlı sinyal birbirinden ayrıdır.</p></div></div><p>Yerel Ollama modeli isteğe bağlıdır. Bu sürüm güncel doğrulanmış haber ve risk verisine sahip olmadığında BEKLE gösterir. Model analizi gerçek işlem yapmaz.</p><button id="ai-run" disabled>AI analizi çalıştır</button><p id="ai-status" role="status">Önce yerel bağlantı ve piyasa analizi gerekir.</p><div id="ai-results"></div><h3>Geçmiş AI kararları</h3><div id="ai-history">Henüz karar yok.</div><p class="disclaimer">Yerel model için servis ücreti yoktur; bilgisayar kaynağı kullanır. Harici sağlayıcılar bu sürümde bağlı değildir. Aşağıdaki simülasyon, AI performansı değildir.</p>`;
+const providerPanel=document.createElement('article');
+providerPanel.className='panel wide';
+providerPanel.innerHTML=`<div class="panel-head"><div><span class="eyebrow">YAPAY ZEKÂ SAĞLAYICILARI</span><h3>AI API ayarları</h3><p>Yalnızca bu bilgisayardaki şifreli kasada saklanır.</p></div></div><label>Sağlayıcı<select id="ai-provider"><option value="openai">OpenAI API (ChatGPT modelleri)</option><option value="ollama_cloud">Ollama Cloud</option><option value="anthropic">Claude / Anthropic</option><option value="gemini">Google Gemini</option><option value="deepseek">DeepSeek</option></select></label><label>Model adı<input id="ai-provider-model" type="text" maxlength="100" autocomplete="off" placeholder="Sağlayıcının API model adı"></label><label>API anahtarı<input id="ai-provider-key" type="password" maxlength="512" autocomplete="new-password" placeholder="API anahtarı"></label><label>AI kasası parolası<input id="ai-provider-pass" type="password" minlength="16" maxlength="512" autocomplete="new-password" placeholder="En az 16 karakter"></label><div class="button-row"><button id="ai-provider-save">Kaydet</button><button id="ai-provider-replace">Değiştir</button><button id="ai-provider-delete">Sil</button><button id="ai-provider-analyze">Bu sağlayıcıyla analiz et</button></div><p id="ai-provider-state" role="status">Önce yerel motora bağlanın.</p><p class="disclaimer">Yerel Ollama için API anahtarı gerekmez. Bulut analizinde seçili sağlayıcıya yalnızca kamuya açık piyasa verileri gönderilir; beş model isteği API ücreti doğurabilir. ChatGPT aboneliği API kredisi anlamına gelmez. Haber ve risk doğrulanmadığında sonuç BEKLE olur.</p>`;
+$('#view-settings .grid').append(providerPanel);
+let providerStates=[];
+function selectedProvider(){return $('#ai-provider').value;}
+function clearProviderSecrets(){const key=$('#ai-provider-key').value,passphrase=$('#ai-provider-pass').value;$('#ai-provider-key').value='';$('#ai-provider-pass').value='';return {apiKey:key,passphrase};}
+async function loadAIProviders(){if(webMode)return;const r=await api('/api/ai/providers');providerStates=r.providers;const found=providerStates.find(x=>x.provider===selectedProvider());text('#ai-provider-state',found?.configured?'Şifreli anahtar kayıtlı; model bağlantısı henüz sınanmadı.':'Bu sağlayıcı için kayıt yok.');}
+$('#ai-provider').addEventListener('change',()=>{clearProviderSecrets();if(token&&!webMode)loadAIProviders().catch(()=>text('#ai-provider-state','Sağlayıcı durumu alınamadı.'));});
+async function saveProvider(replace){const values=clearProviderSecrets(),provider=selectedProvider(),model=$('#ai-provider-model').value.trim();try{await api('/api/ai/providers/save',{provider,model,...values,replace});await loadAIProviders();}catch{text('#ai-provider-state','Kayıt başarısız. Anahtarı, model adını ve kasa parolasını kontrol edin.');}}
+$('#ai-provider-save').addEventListener('click',()=>saveProvider(false));
+$('#ai-provider-replace').addEventListener('click',()=>saveProvider(true));
+$('#ai-provider-delete').addEventListener('click',async()=>{const {passphrase}=clearProviderSecrets();try{await api('/api/ai/providers/delete',{provider:selectedProvider(),passphrase});await loadAIProviders();}catch{text('#ai-provider-state','Silinemedi. Sağlayıcıyı ve kasa parolasını kontrol edin.');}});
+$('#ai-provider-analyze').addEventListener('click',async()=>{const provider=selectedProvider(),{passphrase}=clearProviderSecrets();if(!confirm('Seçili sağlayıcıya herkese açık piyasa verileri gönderilecek ve API ücreti oluşabilir. Analiz başlatılsın mı?'))return;text('#ai-provider-state','Analiz yapılıyor…');try{const result=await api('/api/ai/providers/analyze',{provider,passphrase,symbol:pair,consent:true});showAI(result);text('#ai-provider-state','Analiz tamamlandı; nihai güvenlik sonucu ve gerekçeyi kontrol edin.');navigate('decisions');await refreshAIHistory();}catch{text('#ai-provider-state','Analiz başlatılamadı. Önce piyasa verisini alın; sağlayıcı, model ve kasa parolasını kontrol edin.');}});
+if(webMode){for(const el of providerPanel.querySelectorAll('input,select,button'))el.disabled=true;text('#ai-provider-state','AI API ayarları yalnızca yerel bilgisayarda kullanılabilir.');}
+
+const aiPanel=document.createElement('article');aiPanel.className='panel';aiPanel.innerHTML=`<div class="panel-head"><div><span class="eyebrow">YEREL ÇOKLU AJAN · DENEYSEL</span><h3>AI Trading Analyst</h3><p>Model görüşleri ile kural tabanlı sinyal birbirinden ayrıdır.</p></div></div><p>Yerel Ollama modeli isteğe bağlıdır. Bu sürüm güncel doğrulanmış haber ve risk verisine sahip olmadığında BEKLE gösterir. Model analizi gerçek işlem yapmaz.</p><button id="ai-run" disabled>AI analizi çalıştır</button><p id="ai-status" role="status">Önce yerel bağlantı ve piyasa analizi gerekir.</p><div id="ai-results"></div><h3>Geçmiş AI kararları</h3><div id="ai-history">Henüz karar yok.</div><p class="disclaimer">Yerel model için servis ücreti yoktur; bilgisayar kaynağı kullanır. Harici sağlayıcılar Ayarlar bölümünden yapılandırılabilir. Aşağıdaki simülasyon, AI performansı değildir.</p>`;
 $('#view-decisions').append(aiPanel);
 function showAI(r){const box=$('#ai-results');box.replaceChildren();const summary=document.createElement('p');summary.textContent=`${r.symbol} · ${r.action} · Risk: ${r.risk} · ${date(r.time)} · ${r.reason}`;box.append(summary);for(const role of r.roles){const p=document.createElement('p');const title=document.createElement('strong');title.textContent=role.role+': ';p.append(title,document.createTextNode(role.text));box.append(p);}}
 async function refreshAIHistory(){const r=await api('/api/ai/history');const box=$('#ai-history');box.replaceChildren();if(!r.history.length)box.textContent='Henüz karar yok.';for(const item of r.history){const p=document.createElement('p');p.textContent=`${date(item.time)} · ${item.symbol} · ${item.action} · ${item.reason}`;box.append(p);}}
 const aiPerformance=document.createElement('div');aiPerformance.innerHTML='<h3>AI kararlarının sonradan gözlemi</h3><p>Varsayımsal tek saatlik gözlem: %0,1 komisyon ve %0,1 kayma her yönde uygulanır. BEKLE ve pozisyonu bilinmeyen SAT kâr/zarar sayılmaz.</p><button id="ai-measure">Gözlemi güncelle</button><div id="ai-measure-results">Önce piyasa analizi ve AI kararı gereklidir.</div>';aiPanel.append(aiPerformance);
 const universePanel=document.createElement('article');universePanel.className='panel';universePanel.innerHTML='<h3>Binance TR parite keşfi</h3><p>Aktif spot pariteleri listele ve tür-1 pariteyi analiz için seç. Diğer piyasa türleri, doğrulanmamış fiyatlar ve borsa filtreleri güvenli şekilde dışlanır. Bu bir sanal işlem etkinleştirmesi değildir.</p><button id="universe-load">Pariteleri keşfet</button><p id="universe-status" role="status">Henüz liste alınmadı.</p><div id="universe-list"></div>';$('#view-markets').append(universePanel);
 $('#universe-load').addEventListener('click',async()=>{try{const r=await api('/api/markets/universe');text('#universe-status',`Listelenen: ${r.listed} · Spot etkin: ${r.eligible} · Elenen: ${r.ineligible} · Bu listeden yalnızca tür-1 spot pariteler analiz edilebilir.`);const box=$('#universe-list');box.replaceChildren();for(const item of r.markets){const row=document.createElement('div');row.className='asset';const label=document.createElement('span');label.textContent=`${item.symbol.replace('_',' / ')} · ${item.type===1?'spot analizine uygun':'veri bağlayıcısı doğrulanmadı'}`;row.append(label);if(item.type===1){const select=document.createElement('button');select.type='button';select.textContent='Analiz için seç';select.addEventListener('click',()=>{switchPair(item.symbol);navigate('simulation');text('#analysis-status',`${item.symbol.replace('_',' / ')} seçildi. Tutarları ${item.quoteAsset} cinsinden girin; doğrulama yapılmadan alım/satım yok.`);});row.append(select);}box.append(row);}}catch{text('#universe-status','Parite listesine ulaşılamadı; bağlantıyı ve bölgesel erişimi kontrol edin.');}});
-const scanPanel=document.createElement('article');scanPanel.className='panel';scanPanel.innerHTML='<h3>Piyasa ön taraması · deneysel</h3><p>Type-1 pariteler sırayla taranır. Diğer türler, maliyet varsayımları ve eksik veriler ayrıca gösterilir; öneri veya garantili getiri değildir.</p><button id="scan-start">Taramayı başlat</button> <button id="scan-refresh">Durumu güncelle</button> <button id="scan-auto-on">Otomatik taramayı aç</button> <button id="scan-auto-off">Otomatik taramayı kapat</button> <button id="scan-ai">En düşük maliyetli adayı AI ile incele</button><p id="scan-auto-status">Otomatik tarama: durum alınıyor.</p><p id="scan-status" role="status">Tarama başlatılmadı.</p><div id="scan-list"></div>';$('#view-markets').append(scanPanel);
+const scanPanel=document.createElement('article');scanPanel.className='panel';scanPanel.innerHTML='<h3>Piyasa ön taraması · deneysel</h3><p>Type-1 pariteler sırayla taranır. Diğer türler, maliyet varsayımları ve eksik veriler ayrıca gösterilir; öneri veya garantili getiri değildir.</p><button id="scan-start">Taramayı başlat</button> <button id="scan-refresh">Durumu güncelle</button> <button id="scan-auto-on">Otomatik taramayı aç</button> <button id="scan-auto-off">Sonraki otomatik taramaları durdur</button> <button id="scan-ai">En düşük maliyetli adayı AI ile incele</button><p id="scan-auto-status">Otomatik tarama: durum alınıyor.</p><p id="scan-status" role="status">Tarama başlatılmadı.</p><div id="scan-list"></div>';$('#view-markets').append(scanPanel);
 $('#scan-start').addEventListener('click',async()=>{try{await api('/api/markets/scan',{});text('#scan-status','Tarama başlatıldı; ilerleme otomatik güncellenecek.');await refreshScan();}catch{text('#scan-status','Tarama başlatılamadı; yerel bağlantı veya bekleme süresini kontrol edin.');}});
 for(const [id,enabled] of [['scan-auto-on',true],['scan-auto-off',false]]){
   $(`#${id}`).addEventListener('click',async()=>{
@@ -157,7 +203,7 @@ async function refreshScan(){
     const [s,auto]=await Promise.all([api('/api/markets/scan'),api('/api/markets/scan/auto')]);
     const done=s.results.length,all=s.total??0,candidates=s.results.filter(x=>x.status==='candidate').length;
     text('#scan-status',`Durum: ${s.status} · Toplam: ${all||'—'} · İşlenen: ${done} · Aday: ${candidates} · ${all?Math.round(done/all*100):0}%`);
-    text('#scan-auto-status',`Otomatik tarama: ${auto.enabled?'AÇIK':'KAPALI'}${auto.lastError?' · Güvenli durdurma: '+auto.lastError:''} · Kararlar kural tabanlı araştırmadır, işlem emri değildir.`);
+    text('#scan-auto-status',`Otomatik tarama: ${auto.enabled?'AÇIK':'KAPALI'}${auto.lastError?' · Güvenli durdurma: '+auto.lastError:''} · Kapatma devam eden taramayı iptal etmez. Kararlar araştırmadır, işlem emri değildir.`);
     const fingerprint=`${s.startedAt||''}:${s.status}:${done}`;
     if(fingerprint===lastScanFingerprint)return;
     lastScanFingerprint=fingerprint;
@@ -175,21 +221,167 @@ setInterval(()=>{if(token)refreshScan().catch(()=>{});},5000);
 
 $('#scan-ai').addEventListener('click',async()=>{try{const r=await api('/api/ai/scan-best',{});showAI(r);navigate('decisions');await refreshAIHistory();}catch{text('#scan-status','Taze aday veya AI servisi kullanılamıyor; BEKLE.');}});
 const paperPanel=document.createElement('article');paperPanel.className='panel';paperPanel.innerHTML='<h3>Yerel varsayımsal portföy</h3><p>Örnek başlangıç bütçesi 1.000 TRY’dir. Gerçek bakiye değildir. Bu aşamada sanal işlem yürütme ve fiyat bağlantısı henüz etkin değildir.</p><button id="paper-start">Simülasyonu başlat</button> <button id="paper-stop">Simülasyonu durdur</button> <button id="paper-refresh">Durumu yenile</button><p id="paper-status" role="status">Yerel bağlantı bekleniyor.</p><div id="paper-details"></div>';$('#view-simulation').append(paperPanel);
-async function refreshPaper(){const r=await api('/api/paper/status');text('#paper-status',`${r.status.halted?'STOP':'Aktif'} · sanal işlem yürütme henüz bağlı değil`);const box=$('#paper-details');box.replaceChildren();for(const q of r.valuation.quotes){const p=document.createElement('p');const amount=v=>v===null?'bilinmiyor':`${(v/100).toFixed(2)} ${q.asset}`;p.textContent=`${q.asset} · Kullanılabilir ${amount(q.cash)} · Gerçekleşen ${amount(q.realized)} · Gerçekleşmemiş ${amount(q.unrealized)} · Değer ${amount(q.equity)} · Maliyet esaslı maruziyet ${amount(q.exposureAtCost)}`;box.append(p);}for(const position of r.valuation.positions){const p=document.createElement('p');p.textContent=`${position.symbol} · fiyat ${position.valuation==='available'?'mevcut':'bilinmiyor'}`;box.append(p);}const limit=document.createElement('p');limit.textContent='Birden fazla para biriminin toplamı dönüşüm olmadan gösterilmez. Borsa filtresi ve risk kapıları henüz tamamlanmadı.';box.append(limit);}
+async function refreshPaper(){const r=await api('/api/paper/status');text('#paper-status',`${r.status.halted?'STOP':'Aktif'} · sanal işlem yürütme henüz bağlı değil`);const box=$('#paper-details');box.replaceChildren();for(const q of r.valuation.quotes){const p=document.createElement('p');const amount=v=>v===null?'bilinmiyor':`${(v/100).toFixed(2)} ${q.asset}`;p.textContent=`${q.asset} · Kullanılabilir ${amount(q.cash)} · Gerçekleşen ${amount(q.realized)} · Gerçekleşmemiş ${amount(q.unrealized)} · Değer ${amount(q.equity)} · Maliyet esaslı maruziyet ${amount(q.exposureAtCost)}`;box.append(p);}for(const position of r.valuation.positions){const p=document.createElement('p');p.textContent=`${position.symbol} · fiyat ${position.valuation==='available'?'mevcut':'bilinmiyor'}`;box.append(p);}for(const q of r.performance?.quotes||[]){const p=document.createElement('p');const amount=v=>v===null?'bilinmiyor':q.asset==='TRY'?((v/100).toFixed(2)+' TRY'):(v+' '+q.asset+' alt birim');p.textContent='SİMÜLASYON · '+q.asset+' · Bugün (UTC) gerçekleşen '+amount(q.day.realizedNet)+' · Son 7 gün '+amount(q.week.realizedNet)+' · Toplam '+amount(q.total.realizedNet)+' · Açık gerçekleşmemiş '+amount(q.currentUnrealized)+' · Bugünkü ücret '+amount(q.day.fees)+' · Günlük özkaynak değişimi: bilinmiyor';box.append(p);}const journal=document.createElement('section');const heading=document.createElement('h4');heading.textContent='Sanal olay günlüğü';journal.append(heading);for(const event of r.history||[]){const line=document.createElement('p');line.textContent=event.kind==='execute'?`${date(event.now)} · SANAL ${event.order.action} · ${event.order.symbol} · miktar ${event.order.quantity}`:event.kind==='start'?'START · izleme başlatıldı; yürütme kapalı':'STOP · simülasyon durduruldu';journal.append(line);}for(const gate of r.gateHistory||[]){const line=document.createElement('p');line.textContent=`${date(gate.time)} · ${gate.symbol||'—'} · BEKLE · ${gate.reasons.join(' · ')}`;journal.append(line);}box.append(journal);const limit=document.createElement('p');limit.textContent='Birden fazla para biriminin toplamı dönüşüm olmadan gösterilmez. Borsa filtresi ve risk kapıları henüz tamamlanmadı.';box.append(limit);}
 $('#paper-refresh').addEventListener('click',()=>refreshPaper().catch(()=>text('#paper-status','Simülasyon durumu alınamadı.')));
+let paperRefreshing=false;setInterval(async()=>{if(!token||$('#view-simulation').hidden||paperRefreshing)return;paperRefreshing=true;try{await refreshPaper();}catch{text('#paper-status','Simülasyon durumu alınamadı.');}finally{paperRefreshing=false;}},60000);
 for(const action of ['start','stop'])$(`#paper-${action}`).addEventListener('click',async()=>{try{await api(`/api/paper/${action}`,{});await refreshPaper();}catch{text('#paper-status','Simülasyon durumu değiştirilemedi.');}});
 const ready=document.createElement('div');ready.innerHTML='<button id="paper-check">AI ve güvenlik durumunu kontrol et</button> <button id="ollama-check">Yerel model durumunu kontrol et</button><p id="paper-gate-status" role="status">Sanal yürütme kapalı; veri ve risk doğrulaması bekleniyor.</p><p id="ollama-status" role="status">Yerel model henüz kontrol edilmedi.</p>';paperPanel.append(ready);
 $('#paper-check').addEventListener('click',async()=>{try{const r=await api('/api/paper/readiness',{});const labels={PAPER_STOP:'simülasyon durdurulmuş',AI_UNAVAILABLE_OR_STALE:'AI kararı eksik veya eski',MARKET_UNAVAILABLE_OR_STALE:'piyasa verisi eksik veya eski',CATALOG_OR_FILTER_UNVERIFIED:'katalog veya filtre doğrulanamadı',DECISION_SYMBOL_MISMATCH:'karar ve parite uyuşmuyor',AI_HOLD:'AI kararı BEKLE',VERIFIED_NEWS_UNAVAILABLE:'doğrulanmış haber yok',CONTINUOUS_RISK_UNAVAILABLE:'sürekli risk kontrolü hazır değil',PAPER_EXECUTION_DISABLED:'sanal yürütme kapalı'};text('#paper-gate-status',`BEKLE · ${r.reasons.map(x=>labels[x]||x).join(' · ')}`);}catch{text('#paper-gate-status','Güvenlik durumu doğrulanamadı; BEKLE.');}});
 $('#ollama-check').addEventListener('click',async()=>{try{const r=await api('/api/ai/health');text('#ollama-status',r.available?`Yerel model listede bulundu: ${r.model}. Analiz ayrıca doğrulanmalıdır.`:'Yerel model bağlantısı veya model bulunamadı.');}catch{text('#ollama-status','Yerel model durumu alınamadı.');}});
 $('#ai-measure').addEventListener('click',async()=>{try{const r=await api('/api/ai/performance'),box=$('#ai-measure-results');box.replaceChildren();if(!r.results.length)box.textContent='Henüz AI kararı yok.';for(const x of r.results){const p=document.createElement('p');p.textContent=x.status!=='observed'?`${x.symbol} · ${x.action} · henüz uygun kapalı mum yok`:`${x.symbol} · ${x.action} · piyasa hareketi ${(x.marketMove*100).toFixed(2)}% · ${x.simulatedReturn===null?'kâr/zarar hesaplanmadı':`varsayımsal net ${(x.simulatedReturn*100).toFixed(2)}%`}`;box.append(p);}}catch{text('#ai-measure-results','Gözlem şu anda kullanılamıyor.');}});
-$('#ai-run').addEventListener('click',async()=>{const btn=$('#ai-run');btn.disabled=true;text('#ai-status','Yerel model çalışıyor…');try{const result=await api('/api/ai/analyze',{symbol:pair});showAI(result);await refreshAIHistory();text('#ai-status','AI analizi tamamlandı.');}catch{text('#ai-status','AI servisi kullanılamıyor; karar BEKLE.');}finally{btn.disabled=!token;}});
+$('#ai-run').addEventListener('click',async()=>{const btn=$('#ai-run');btn.disabled=true;text('#ai-status','Yerel model çalışıyor…');try{const result=await api('/api/ai/analyze',{symbol:pair});showAI(result);await refreshAIHistory();text('#ai-status',result.errorCode?result.reason+' ('+result.errorCode+')':'AI araştırma analizi tamamlandı; güvenlik kararı BEKLE.');}catch{text('#ai-status','AI servisi kullanılamıyor; karar BEKLE.');}finally{btn.disabled=!token;}});
 
 if(webMode){
-  $('#local-token').disabled=true;$('#local-login button').disabled=true;
+  // Web and local engine are different trust boundaries. Google web login never unlocks a local vault.
+  $('#local-login').hidden=true;
+  googleBox.hidden=true;
+  // Browser-only credentials: never send them to storage, logs, URLs or any order endpoint.
+  $('#tr-key').closest('article').hidden=true;
+  const accountPanel=document.createElement('article');
+  accountPanel.className='panel wide';
+  accountPanel.innerHTML=`<span class="eyebrow">BINANCE TR · YALNIZCA OKUMA</span>
+    <h3>Hesap bakiyesi bağlantısı</h3>
+    <p>Yalnızca okuma izinli Binance TR API bilgilerinizi girin. Anahtarlar bu açık sekmede geçici tutulur, sunucuda saklanmaz ve sekme kapanınca kaybolur. İşlem ve para çekme izinleri vermeyin.</p>
+    <form id="web-binance-form" class="form-grid" autocomplete="off">
+      <label>API Key<input id="web-binance-key" type="password" autocomplete="off" maxlength="512" required></label>
+      <label>API Secret<input id="web-binance-secret" type="password" autocomplete="off" maxlength="512" required></label>
+      <button id="web-binance-connect" class="primary" type="submit">Hesabı oku</button>
+    </form>
+    <div class="form-grid">
+      <button id="web-binance-refresh" type="button" disabled>Bakiyeyi yenile</button>
+      <button id="web-binance-disconnect" type="button" disabled>Bağlantıyı kes</button>
+    </div>
+    <div><button id="web-binance-diagnostic" type="button">Binance TR bağlantısını test et (anahtar gerektirmez)</button></div>
+    <p id="web-binance-diagnostic-status" role="status">Ağ testi henüz yapılmadı.</p>
+    <p id="web-binance-status" role="status">Bağlı değil · gerçek emirler kapalı</p>
+    <div id="web-binance-balances" aria-live="polite"></div>`;
+  $('#view-settings .grid').append(accountPanel);
+  let webBinanceCredentials=null;
+  const webStatus=accountPanel.querySelector('#web-binance-status');
+  const webBalances=accountPanel.querySelector('#web-binance-balances');
+  const webRefresh=accountPanel.querySelector('#web-binance-refresh');
+  const webDisconnect=accountPanel.querySelector('#web-binance-disconnect');
+  const webConnect=accountPanel.querySelector('#web-binance-connect');
+  const webKey=accountPanel.querySelector('#web-binance-key');
+  const webSecret=accountPanel.querySelector('#web-binance-secret');
+  const diagnosticButton=accountPanel.querySelector('#web-binance-diagnostic');
+  const diagnosticStatus=accountPanel.querySelector('#web-binance-diagnostic-status');
+  diagnosticButton.addEventListener('click',async()=>{
+    diagnosticButton.disabled=true;
+    diagnosticStatus.textContent='Binance TR bağlantısı kontrol ediliyor…';
+    try{
+      const res=await fetch('/api/binance-tr/diagnostic',{method:'GET',credentials:'same-origin',cache:'no-store'});
+      const result=await res.json();
+      if(!res.ok){diagnosticStatus.textContent=res.status===429?'Çok sık test yapıldı. Bir dakika sonra deneyin.':'Tanılama servisi kullanılamıyor.';return;}
+      const explanation={
+        HTTP_OK:'Binance TR genel API adresine erişildi. API anahtarı, IP izni ve hesap erişimi ayrıca doğrulanmalı.',
+        ACCESS_BLOCKED:'Binance TR genel API isteği engellendi. Sunucu veya güvenlik duvarı kısıtlaması olabilir.',
+        RATE_LIMITED:'Binance TR istek sınırına ulaşıldı.',
+        REDIRECT:'Binance TR genel API adresi yönlendirme döndürdü.',
+        HTTP_ERROR:'Binance TR genel API adresi hata yanıtı verdi.',
+        NETWORK_ERROR:'Cloudflare sunucusundan Binance TR genel API adresine ulaşılamadı.'
+      };
+      diagnosticStatus.textContent=(explanation[result.status]||'Tanılama sonucu belirsiz.')+
+        (typeof result.httpStatus==='number'?' (HTTP '+result.httpStatus+')':'')+
+        (result.detail==='TIMEOUT'?' · Zaman aşımı':'');
+    }catch{diagnosticStatus.textContent='Tanılama isteği çalıştırılamadı.';}
+    finally{diagnosticButton.disabled=false;}
+  });
+  let webRequestBusy=false;
+  function renderWebBalances(items){
+    webBalances.replaceChildren();
+    const heading=document.createElement('h4');heading.textContent='Sıfır olmayan bakiyeler';webBalances.append(heading);
+    if(!items.length){const empty=document.createElement('p');empty.textContent='Hesapta sıfırdan büyük bakiye bulunamadı.';webBalances.append(empty);return;}
+    const table=document.createElement('table');
+    const head=document.createElement('thead');head.innerHTML='<tr><th>Varlık</th><th>Kullanılabilir</th><th>Kilitli</th></tr>';table.append(head);
+    const body=document.createElement('tbody');
+    for(const item of items){const row=document.createElement('tr');for(const value of [item.asset,item.free,item.locked]){const cell=document.createElement('td');cell.textContent=value;row.append(cell);}body.append(row);}
+    table.append(body);webBalances.append(table);
+  }
+  async function fetchWebBalances(credentials){
+    if(webRequestBusy)return;
+    webRequestBusy=true;webConnect.disabled=true;webRefresh.disabled=true;webStatus.textContent='Binance TR bakiyesi okunuyor…';
+    try{
+      const response=await fetch('/api/binance-tr/balance',{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json','X-Para-Request':'1'},body:JSON.stringify(credentials)});
+      const payload=await response.json().catch(()=>({}));
+      if(!response.ok)throw Error(payload.error||'EXCHANGE_READ_FAILED');
+      if(!Array.isArray(payload.balances)||payload.readOnly!==true)throw Error('INVALID_EXCHANGE_RESPONSE');
+      renderWebBalances(payload.balances);
+      webStatus.textContent='Binance TR hesabı okundu · yalnızca okuma · gerçek emirler kapalı';
+      return true;
+    }catch(error){
+      const messages={AUTH_REQUIRED:'Google oturumu sona erdi. Yeniden giriş yapın.',RATE_LIMIT:'Çok sık deneme yapıldı. Bir dakika sonra tekrar deneyin.',EXCHANGE_RATE_LIMIT:'Binance TR istek sınırına ulaşıldı.',EXCHANGE_UNAVAILABLE:'Binance TR sunucusuna erişilemiyor.',INVALID_CREDENTIALS:'API Key ve Secret alanlarını kontrol edin.',INVALID_EXCHANGE_RESPONSE:'Binance TR beklenmeyen yanıt verdi.',EXCHANGE_READ_FAILED:'Binance TR bağlantısı veya API izinleri doğrulanamadı.',SERVICE_NOT_CONFIGURED:'Web hesap okuma servisi henüz yapılandırılmadı.'};
+      webStatus.textContent=messages[error.message]||'Bakiye okunamadı. Bağlantıyı kontrol edin.';
+      webBalances.replaceChildren();
+      return false;
+    }finally{
+      webRequestBusy=false;webConnect.disabled=false;webRefresh.disabled=!webBinanceCredentials;
+    }
+  }
+  accountPanel.querySelector('#web-binance-form').addEventListener('submit',async event=>{
+    event.preventDefault();
+    if(webRequestBusy)return;
+    // Check public API reachability before transmitting any credentials.
+    // The diagnostic request never contains API keys or secrets.
+    webRequestBusy=true;webConnect.disabled=true;
+    webStatus.textContent='Önce Binance TR sunucu bağlantısı doğrulanıyor…';
+    let network;
+    try{
+      const result=await fetch('/api/binance-tr/diagnostic',{method:'GET',credentials:'same-origin',cache:'no-store'});
+      if(!result.ok)throw Error('DIAGNOSTIC_UNAVAILABLE');
+      network=await result.json();
+    }catch{network=null;}
+    finally{webRequestBusy=false;webConnect.disabled=false;}
+    if(!network?.reachable||network.status!=='HTTP_OK'){
+      webKey.value='';webSecret.value='';
+      webStatus.textContent=network?.status==='ACCESS_BLOCKED'
+        ?'Binance TR Cloudflare isteğini HTTP 403 ile engelledi. API anahtarların gönderilmedi. Bağlantı için yerel motor kullanılmalı.'
+        :'Binance TR genel API bağlantısı doğrulanamadı. Güvenlik için API anahtarların gönderilmedi.';
+      return;
+    }
+    // Clear input elements immediately; retain secrets in this tab's memory only until disconnect.
+    const credentials={apiKey:webKey.value,secretKey:webSecret.value};
+    webKey.value='';webSecret.value='';
+    webBinanceCredentials=null;webRefresh.disabled=true;webDisconnect.disabled=true;
+    if(await fetchWebBalances(credentials)){webBinanceCredentials=credentials;webRefresh.disabled=false;webDisconnect.disabled=false;}
+  });
+  webRefresh.addEventListener('click',()=>{if(webBinanceCredentials)fetchWebBalances(webBinanceCredentials);});
+  webDisconnect.addEventListener('click',()=>{
+    webBinanceCredentials=null;webRefresh.disabled=true;webDisconnect.disabled=true;webBalances.replaceChildren();
+    webStatus.textContent='Bağlantı kesildi · anahtarlar sekme belleğinden çıkarıldı';
+  });
+  window.addEventListener('pagehide',()=>{webBinanceCredentials=null;});
+  const connectionPanel=$('#local-login').closest('article');
+  connectionPanel.querySelector('.eyebrow').textContent='WEB OTURUMU';
+  connectionPanel.querySelector('h3').textContent='Google ile güvenli giriş';
+  connectionPanel.querySelector('h3').nextElementSibling.textContent='Bu web sürümü Google hesabınızla korunur. Windows yerel motoru ve şifreli Binance TR kasası bu oturumdan açılamaz.';
   for(const id of ['tr-key','tr-secret','tr-pass','tr-save','tr-test','tr-change','tr-delete','local-halt','ai-run']){const el=$(`#${id}`);if(el)el.disabled=true;}
-  text('#local-status','Web oturumu Cloudflare Access tarafından korunur.');
-  text('#tr-state','Binance TR hesap bağlantısı ve şifreli kasa web sürümünde henüz kullanılamıyor.');
+  text('#local-status','Google web oturumu kontrol ediliyor…');
+  text('#tr-state','Binance TR hesap bağlantısı ve şifreli kasa yalnız yerel bilgisayarda kullanılabilir.');
   text('#ai-status','AI analizi web sürümünde henüz kullanılamıyor.');
-  fetch('/api/auth/me',{cache:'no-store'}).then(r=>{if(!r.ok)throw Error('no session');return r.json();}).then(()=>{token='web-session';$('#analysis-run').disabled=false;$('#analysis-auto').disabled=false;text('#analysis-status','Web araştırma analizi başlatılabilir.');}).catch(()=>{text('#local-status','Web oturumu doğrulanamadı.');});
-  const logout=document.createElement('a');logout.href='/cdn-cgi/access/logout';logout.textContent='Çıkış yap';logout.className='status-pill';logout.addEventListener('click',e=>{if(!confirm('Cloudflare Access oturumlarınızdan çıkış yapılacak. Devam edilsin mi?'))e.preventDefault();});document.querySelector('.top-actions').append(logout);
+  const logout=document.createElement('button');
+  logout.type='button';logout.textContent='Çıkış yap';logout.className='status-pill';logout.disabled=true;
+  logout.addEventListener('click',async()=>{
+    if(!confirm('Google web oturumunuz kapatılsın mı?'))return;
+    logout.disabled=true;
+    try{
+      const response=await fetch('/auth/logout',{method:'POST',headers:{'X-Para-Request':'1'},credentials:'same-origin',cache:'no-store'});
+      if(!response.ok)throw Error('LOGOUT_FAILED');
+      location.assign('/');
+    }catch{logout.disabled=false;text('#local-status','Çıkış yapılamadı. Tekrar deneyin.');}
+  });
+  document.querySelector('.top-actions').append(logout);
+  fetch('/api/auth/me',{cache:'no-store',credentials:'same-origin'})
+    .then(r=>{if(!r.ok)throw Error('no session');return r.json();})
+    .then(user=>{
+      token='web-session';
+      text('#local-status',user.email?'Google oturumu açık: '+user.email:'Google oturumu açık.');
+      logout.disabled=false;
+      $('#analysis-run').disabled=false;$('#analysis-auto').disabled=false;
+      text('#analysis-status','Web araştırma analizi başlatılabilir.');
+    }).catch(()=>{
+      token='';
+      text('#local-status','Web oturumu doğrulanamadı. Yeniden Google ile giriş yapın.');
+      const login=document.createElement('a');login.href='/auth/google/login';login.textContent='Google ile giriş yap';login.className='primary';connectionPanel.append(login);
+    });
 }

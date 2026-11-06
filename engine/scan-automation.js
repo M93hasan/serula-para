@@ -9,7 +9,7 @@ export class ScanAutomation {
   status(){return {enabled:this.#enabled,nextEligibleAt:this.#lastCompletedAt?this.#lastCompletedAt+this.#intervalMs:null,lastError:this.#lastError,scan:this.#scanner.status().status};}
   setEnabled(value){
     if(typeof value!=='boolean')throw Error('INVALID_AUTOMATION');
-    if(!value){this.#enabled=false;if(this.#timer)clearInterval(this.#timer);this.#timer=null;return this.status();}
+    if(!value){this.#enabled=false;if(this.#timer)clearInterval(this.#timer);this.#timer=null;this.#scanner.stop?.();return this.status();}
     if(this.#enabled)return this.status();
     const state=this.#scanner.status();
     if(STOP_STATES.has(state.status))throw Error('REQUIRES_MANUAL_REVIEW');

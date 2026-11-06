@@ -18,3 +18,23 @@ test('AI endpoint uses only server-cached market and requires same-origin authen
   assert.equal((await (await fetch(origin+'/api/ai/history',{headers:{Authorization:`Bearer ${token}`}})).json()).history.length,1);
  }finally{await new Promise(r=>server.close(r));store.close();}
 });
+
+test('analysis rejects a mismatched model and data that expires during inference',async()=>{
+ for(const mode of ['model','stale']) {let clock=now;const agent=new AIAnalyst({clock:()=>clock,model:'local',fetchImpl:async()=>{if(mode==='stale')clock+=300001;return new Response(JSON.stringify({model:mode==='model'?'unexpected':'local',message:{content:JSON.stringify({analysis:'Research'})}}));}});const result=await agent.analyze(snapshot());assert.equal(result.action,'BEKLE');assert.equal(result.roles.length,1);assert.match(result.reason,/geçersiz/);}
+});
+
+test('bounded timeout and sanitized diagnostic codes preserve BEKLE',async()=>{
+ for(const timeoutMs of [0,Infinity,60001])assert.throws(()=>new AIAnalyst({timeoutMs}),/INVALID_AI_TIMEOUT/);
+ for(const [error,code] of [[new DOMException('private','TimeoutError'),'MODEL_TIMEOUT'],[new Error('private-key'),'MODEL_CONNECTION_ERROR']]){
+ const r=await new AIAnalyst({model:'local',clock:()=>now,fetchImpl:async()=>{throw error;}}).analyze(snapshot());assert.equal(r.errorCode,code);assert.equal(r.action,'BEKLE');assert.ok(!JSON.stringify(r).includes('private'));
+ }
+});
+
+test('compact local prompts preserve all validated candles and bound prior responses',async()=>{
+ const requests=[];const input=snapshot();
+ const agent=new AIAnalyst({clock:()=>now,model:'local',fetchImpl:async(_url,options)=>{
+  requests.push(JSON.parse(options.body));return new Response(JSON.stringify({message:{content:JSON.stringify({analysis:'x'.repeat(1000)})}}));
+ }});
+ const result=await agent.analyze(input);assert.equal(result.action,'BEKLE');assert.equal(result.roles.length,6);assert.equal(requests.length,5);
+ for(const request of requests){const prompt=JSON.parse(request.messages[1].content);assert.equal(prompt.facts.candles.length,20);assert.deepEqual(prompt.facts.candleColumns,['time','closeTime','open','high','low','close','volume']);assert.deepEqual(prompt.facts.candles[19],Object.values(input.candles[19]));assert.ok(prompt.previous.every(role=>role.text.length<=300));assert.equal(request.options.num_predict,120);assert.ok(!JSON.stringify(prompt).includes('DO-NOT-SEND'));}
+});
