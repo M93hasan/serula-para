@@ -386,6 +386,25 @@ async function refreshAIHistory(){const r=await api('/api/ai/history');const box
 const aiPerformance=document.createElement('div');aiPerformance.innerHTML='<h3>AI kararlarının sonradan gözlemi</h3><p>Varsayımsal tek saatlik gözlem: %0,1 komisyon ve %0,1 kayma her yönde uygulanır. BEKLE ve pozisyonu bilinmeyen SAT kâr/zarar sayılmaz.</p><button id="ai-measure">Gözlemi güncelle</button><div id="ai-measure-results">Önce piyasa analizi ve AI kararı gereklidir.</div>';aiPanel.append(aiPerformance);
 const universePanel=document.createElement('article');universePanel.className='panel';universePanel.innerHTML='<h3>Binance TR parite keşfi</h3><p>Aktif spot pariteleri listele ve tür-1 pariteyi analiz için seç. Diğer piyasa türleri, doğrulanmamış fiyatlar ve borsa filtreleri güvenli şekilde dışlanır. Bu bir sanal işlem etkinleştirmesi değildir.</p><button id="universe-load">Pariteleri keşfet</button><p id="universe-status" role="status">Henüz liste alınmadı.</p><div id="universe-list"></div>';$('#view-markets').append(universePanel);
 $('#universe-load').addEventListener('click',async()=>{try{const r=await api('/api/markets/universe');text('#universe-status',`Listelenen: ${r.listed} · Spot etkin: ${r.eligible} · Elenen: ${r.ineligible} · Bu listeden yalnızca tür-1 spot pariteler analiz edilebilir.`);const box=$('#universe-list');box.replaceChildren();for(const item of r.markets){const row=document.createElement('div');row.className='asset';const label=document.createElement('span');label.textContent=`${item.symbol.replace('_',' / ')} · ${item.type===1?'spot analizine uygun':'veri bağlayıcısı doğrulanmadı'}`;row.append(label);if(item.type===1){const select=document.createElement('button');select.type='button';select.textContent='Analiz için seç';select.addEventListener('click',()=>{switchPair(item.symbol);navigate('simulation');text('#analysis-status',`${item.symbol.replace('_',' / ')} seçildi. Tutarları ${item.quoteAsset} cinsinden girin; doğrulama yapılmadan alım/satım yok.`);});row.append(select);}box.append(row);}}catch{text('#universe-status','Parite listesine ulaşılamadı; bağlantıyı ve bölgesel erişimi kontrol edin.');}});
+const verifiedNewsPanel=document.createElement('article');
+verifiedNewsPanel.className='panel';
+verifiedNewsPanel.innerHTML='<h3>Doğrulanmış kaynaklardan piyasa haberleri</h3><p>Yayıncı alan adı, HTTPS bağlantısı ve yayın tarihi doğrulanır. Başlığın gerçekliği ayrıca teyit edilmelidir. Habere dayanarak gerçek emir verilmez.</p><button id="news-refresh">Haberleri yenile</button><p id="news-verification-state" role="status">Haber kaynakları henüz kontrol edilmedi.</p><div id="news-articles"></div>';
+$('#view-decisions').append(verifiedNewsPanel);
+async function refreshVerifiedNews(){
+ try{
+  const r=await api('/api/news/verified'),box=$('#news-articles');box.replaceChildren();
+  text('#news-verification-state',r.verified?'İki haber kaynağı erişilebilir · yayın zamanı doğrulandı.':'Haber doğrulaması eksik · AI güvenli BEKLE');
+  for(const item of r.articles||[]){
+   const row=document.createElement('p'),a=document.createElement('a');
+   a.href=item.url;a.target='_blank';a.rel='noopener noreferrer';
+   a.textContent=item.publisher+' · '+date(item.publishedAt)+' · '+item.title;
+   row.append(a);box.append(row);
+  }
+  if(!box.children.length)box.textContent='Güncel doğrulanabilir haber bulunamadı.';
+ }catch{text('#news-verification-state','Haber sağlayıcılarına erişilemiyor · BEKLE');}
+}
+$('#news-refresh').addEventListener('click',()=>refreshVerifiedNews());
+setInterval(()=>{if(token)refreshVerifiedNews().catch(()=>{});},300000);
 const scanPanel=document.createElement('article');scanPanel.className='panel';scanPanel.innerHTML='<h3>Piyasa ön taraması · deneysel</h3><p>Type-1 pariteler sırayla taranır. Diğer türler, maliyet varsayımları ve eksik veriler ayrıca gösterilir; öneri veya garantili getiri değildir.</p><button id="scan-start">Taramayı başlat</button> <button id="scan-refresh">Durumu güncelle</button> <button id="scan-auto-on">Otomatik taramayı aç</button> <button id="scan-auto-off">Sonraki otomatik taramaları durdur</button> <button id="scan-ai">En düşük maliyetli adayı AI ile incele</button><p id="scan-auto-status">Otomatik tarama: durum alınıyor.</p><p id="scan-status" role="status">Tarama başlatılmadı.</p><div id="scan-list"></div>';$('#view-markets').append(scanPanel);
 const autonomyPanel=document.createElement('article');
 autonomyPanel.className='panel';
