@@ -22,3 +22,10 @@ test('AI endpoint uses only server-cached market and requires same-origin authen
 test('analysis rejects a mismatched model and data that expires during inference',async()=>{
  for(const mode of ['model','stale']) {let clock=now;const agent=new AIAnalyst({clock:()=>clock,model:'local',fetchImpl:async()=>{if(mode==='stale')clock+=300001;return new Response(JSON.stringify({model:mode==='model'?'unexpected':'local',message:{content:JSON.stringify({analysis:'Research'})}}));}});const result=await agent.analyze(snapshot());assert.equal(result.action,'BEKLE');assert.equal(result.roles.length,1);assert.match(result.reason,/geçersiz/);}
 });
+
+test('bounded timeout and sanitized diagnostic codes preserve BEKLE',async()=>{
+ for(const timeoutMs of [0,Infinity,60001])assert.throws(()=>new AIAnalyst({timeoutMs}),/INVALID_AI_TIMEOUT/);
+ for(const [error,code] of [[new DOMException('private','TimeoutError'),'MODEL_TIMEOUT'],[new Error('private-key'),'MODEL_CONNECTION_ERROR']]){
+ const r=await new AIAnalyst({model:'local',clock:()=>now,fetchImpl:async()=>{throw error;}}).analyze(snapshot());assert.equal(r.errorCode,code);assert.equal(r.action,'BEKLE');assert.ok(!JSON.stringify(r).includes('private'));
+ }
+});

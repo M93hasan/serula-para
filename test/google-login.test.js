@@ -125,3 +125,12 @@ test('Font assets retain font MIME and local host isolation',async()=>{
     const status=await new Promise((resolve,reject)=>{get(base+'/assets/DM-Sans-test.ttf',{headers:{Host:'localhost:'+server.address().port}},r=>{r.resume();resolve(r.statusCode);}).on('error',reject);});assert.equal(status,403);
   }finally{await new Promise(r=>server.close(r));store.close();rmSync(dir,{recursive:true,force:true});}
 });
+
+test('Google state/session expiry and unreachable token endpoint fail closed',async()=>{
+ let now=1000000;const {auth}=google({clock:()=>now});
+ const start=await auth.handle('/auth/google/start',request('/auth/google/start'));const state=new URL(start.headers.get('location')).searchParams.get('state');
+ now+=300001;assert.equal((await auth.handle('/auth/google/callback',request('/auth/google/callback?code=x&state='+state))).status,403);
+ const next=await auth.handle('/auth/google/start',request('/auth/google/start'));const nextState=new URL(next.headers.get('location')).searchParams.get('state');
+ const response=await auth.handle('/auth/google/callback',request('/auth/google/callback?code=x&state='+nextState));const cookie=response.headers.get('set-cookie').split(';')[0];assert.ok(auth.user(cookie));now+=8*3600000;assert.equal(auth.user(cookie),null);auth.close();
+ const offline=google({fetchImpl:async()=>{throw Error('private-secret');}}).auth;const s=await offline.handle('/auth/google/start',request('/auth/google/start'));const key=new URL(s.headers.get('location')).searchParams.get('state');const failed=await offline.handle('/auth/google/callback',request('/auth/google/callback?code=x&state='+key));assert.equal(failed.status,401);assert.ok(!(await failed.text()).includes('private-secret'));offline.close();
+});

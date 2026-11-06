@@ -71,3 +71,9 @@ test('local account history API writes only snapshots after read-only account re
     assert.equal((await fetch(origin+'/api/paper/execute',{method:'POST',headers,body:'{}'})).status,404);
   }finally{await new Promise(resolve=>server.close(resolve));accountHistory.close();simulator.close();}
 });
+
+test('scheduler disable prevents future starts and re-enable respects interval',()=>{
+ let calls=0,now=1700000000000,scan={status:'idle'};
+ const scheduler=new ScanAutomation({status:()=>scan,start:()=>{calls++;scan={status:'running'};}},{clock:()=>now,intervalMs:60000});
+ try{scheduler.setEnabled(true);assert.equal(calls,1);scheduler.setEnabled(false);scan={status:'complete',finishedAt:now};scheduler.tick();assert.equal(calls,1);scheduler.setEnabled(true);assert.equal(calls,1);now+=60001;scheduler.tick();assert.equal(calls,2);scan={status:'REGION_RESTRICTED'};scheduler.tick();assert.equal(scheduler.status().enabled,false);assert.throws(()=>scheduler.setEnabled(true),/REQUIRES_MANUAL_REVIEW/);}finally{scheduler.close();}
+});
