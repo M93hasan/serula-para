@@ -38,3 +38,8 @@ test('compact local prompts preserve all validated candles and bound prior respo
  const result=await agent.analyze(input);assert.equal(result.action,'BEKLE');assert.equal(result.roles.length,6);assert.equal(requests.length,5);
  for(const request of requests){const prompt=JSON.parse(request.messages[1].content);assert.equal(prompt.facts.candles.length,20);assert.deepEqual(prompt.facts.candleColumns,['time','closeTime','open','high','low','close','volume']);assert.deepEqual(prompt.facts.candles[19],Object.values(input.candles[19]));assert.ok(prompt.previous.every(role=>role.text.length<=300));assert.equal(request.options.num_predict,120);assert.ok(!JSON.stringify(prompt).includes('DO-NOT-SEND'));}
 });
+
+test('five roles share a 60 second total deadline and fail closed',async()=>{
+ let elapsed=0,calls=0;const agent=new AIAnalyst({clock:()=>now,monotonic:()=>elapsed,model:'local',fetchImpl:async()=>{calls++;elapsed+=20000;return new Response(JSON.stringify({message:{content:JSON.stringify({analysis:'fixture'})}}));}});
+ const result=await agent.analyze(snapshot());assert.equal(result.action,'BEKLE');assert.equal(result.errorCode,'MODEL_TIMEOUT');assert.equal(calls,3);
+});

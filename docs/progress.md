@@ -49,3 +49,5 @@
 - Yerel AI adayı ve simülasyon durumuna dayalı salt BEKLE hazırlık kontrolü, ayrı SQLite gerekçe günlüğü ve yerel Ollama model listesi sağlık kontrolü eklendi. Kontrol sanal işlem yürütmez; haber, sürekli risk ve yürütme kapısı hâlâ kapalıdır. Gerçek model, haber, TradingAgents, tüm piyasa türleri ve canlı borsa doğrulanmadı.
 
 - Yerel sunucuda açık TRY simülasyon pozisyonları için tarayıcıdan taze tip-1 son işlem verisiyle sınırlı değerleme/periodik risk kontrolü eklendi; veri veya katalog yoksa STOP. Diğer quote'lar dönüştürülmez ve eksik fiyat sayılır. Bu akış sentetik testlidir; gerçek Binance TR verisiyle veya Windows'ta doğrulanmadı. Paper emir API'si kapalıdır.
+
+- Linux: imzalı haber içeriği SHA-256 bütünlüğü kontrolü ve AI için toplam 60 saniyelik süre sınırı eklendi; kaynak doğruluğu ve canlı haber entegrasyonu henüz kanıtlanmadı. Sanal yürütme kapalı.
