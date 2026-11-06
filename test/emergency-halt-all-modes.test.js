@@ -22,5 +22,8 @@ test('global emergency stop disables automatic scanning and halts paper and simu
    assert.equal(state.scan.enabled,false);
    assert.ok(calls.includes('scan-stop'));
    assert.ok(calls.includes('paper-halt'));
+   assert.equal((await fetch(origin+'/api/markets/scan',{method:'POST',headers,body:'{}'})).status,409);
+   assert.equal((await fetch(origin+'/api/ai/autonomous',{method:'POST',headers,body:JSON.stringify({enabled:true})})).status,409);
+   assert.equal((await fetch(origin+'/api/paper/start',{method:'POST',headers,body:'{}'})).status,409);
  }finally{await new Promise(resolve=>server.close(resolve));store.close();}
 });
