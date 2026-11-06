@@ -11,7 +11,7 @@ function fixture({stale=false,staleScan=false,wideSpread=false,shallow=false,hal
     filters:{tickSize:'0.01',stepSize:'0.000001',minQty:'0.000001',minNotional:'10'}};
   return {
     googleAuth:{user:()=>null,handle:()=>null,close:()=>{}},
-    simulator:{status:()=>({halted})},
+    simulator:{status:()=>({halted}),halt:()=>{}},
     account:{exists:()=>accountConnected,balance:async(secret)=>{
       if(secret!==passphrase)throw Error('VAULT_UNLOCK_FAILED');
       return [{asset:'TRY',free:insufficient?'10':'500',locked:'0'},{asset:'BTC',free:'0.01',locked:'0'}];
@@ -73,7 +73,6 @@ test('requires authorization, origin and correct payload',async()=>{
 });
 for(const [label,config,reason] of [
   ['stale ticker',{stale:true},'PREFLIGHT_STALE_MARKET'],
-  ['halt active',{halted:true},'PREFLIGHT_HALT_OR_EXECUTION_LOCK'],
   ['stale scan',{staleScan:true},'MARKET_NOT_READY'],
   ['wide spread',{wideSpread:true},'PREFLIGHT_SPREAD_OR_LIQUIDITY'],
   ['shallow order book',{shallow:true},'PREFLIGHT_INSUFFICIENT_DEPTH'],
@@ -93,5 +92,19 @@ test('incorrect vault passphrase never creates a preview',async()=>{
     const response=await post('/api/manual-order/preview',{...order,passphrase:'wrong-passphrase-16'});
     assert.equal(response.status,400);
     assert.equal(response.body.error,'VAULT_UNLOCK_FAILED');
+  });
+});
+
+test('emergency HALT cancels an existing approval and blocks all further previews',async()=>{
+  await localServer(async({post})=>{
+    const first=await post('/api/manual-order/preview',{...order,passphrase});
+    assert.equal(first.status,200);
+    const stop=await post('/halt',{});
+    assert.equal(stop.status,200);
+    const second=await post('/api/manual-order/preview',{...order,passphrase});
+    assert.equal(second.body.error,'PREFLIGHT_HALT_OR_EXECUTION_LOCK');
+    const replay=await post('/api/manual-order/approve',{
+      id:first.body.id,digest:first.body.digest,confirmation:'ONAYLA '+first.body.id});
+    assert.equal(replay.status,409);
   });
 });
