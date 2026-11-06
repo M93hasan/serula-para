@@ -235,6 +235,79 @@ if(webMode){
   // Web and local engine are different trust boundaries. Google web login never unlocks a local vault.
   $('#local-login').hidden=true;
   googleBox.hidden=true;
+  // Browser-only credentials: never send them to storage, logs, URLs or any order endpoint.
+  $('#tr-key').closest('article').hidden=true;
+  const accountPanel=document.createElement('article');
+  accountPanel.className='panel wide';
+  accountPanel.innerHTML=`<span class="eyebrow">BINANCE TR · YALNIZCA OKUMA</span>
+    <h3>Hesap bakiyesi bağlantısı</h3>
+    <p>Yalnızca okuma izinli Binance TR API bilgilerinizi girin. Anahtarlar bu açık sekmede geçici tutulur, sunucuda saklanmaz ve sekme kapanınca kaybolur. İşlem ve para çekme izinleri vermeyin.</p>
+    <form id="web-binance-form" class="form-grid" autocomplete="off">
+      <label>API Key<input id="web-binance-key" type="password" autocomplete="off" maxlength="512" required></label>
+      <label>API Secret<input id="web-binance-secret" type="password" autocomplete="off" maxlength="512" required></label>
+      <button id="web-binance-connect" class="primary" type="submit">Hesabı oku</button>
+    </form>
+    <div class="form-grid">
+      <button id="web-binance-refresh" type="button" disabled>Bakiyeyi yenile</button>
+      <button id="web-binance-disconnect" type="button" disabled>Bağlantıyı kes</button>
+    </div>
+    <p id="web-binance-status" role="status">Bağlı değil · gerçek emirler kapalı</p>
+    <div id="web-binance-balances" aria-live="polite"></div>`;
+  $('#view-settings .grid').append(accountPanel);
+  let webBinanceCredentials=null;
+  const webStatus=accountPanel.querySelector('#web-binance-status');
+  const webBalances=accountPanel.querySelector('#web-binance-balances');
+  const webRefresh=accountPanel.querySelector('#web-binance-refresh');
+  const webDisconnect=accountPanel.querySelector('#web-binance-disconnect');
+  const webConnect=accountPanel.querySelector('#web-binance-connect');
+  const webKey=accountPanel.querySelector('#web-binance-key');
+  const webSecret=accountPanel.querySelector('#web-binance-secret');
+  let webRequestBusy=false;
+  function renderWebBalances(items){
+    webBalances.replaceChildren();
+    const heading=document.createElement('h4');heading.textContent='Sıfır olmayan bakiyeler';webBalances.append(heading);
+    if(!items.length){const empty=document.createElement('p');empty.textContent='Hesapta sıfırdan büyük bakiye bulunamadı.';webBalances.append(empty);return;}
+    const table=document.createElement('table');
+    const head=document.createElement('thead');head.innerHTML='<tr><th>Varlık</th><th>Kullanılabilir</th><th>Kilitli</th></tr>';table.append(head);
+    const body=document.createElement('tbody');
+    for(const item of items){const row=document.createElement('tr');for(const value of [item.asset,item.free,item.locked]){const cell=document.createElement('td');cell.textContent=value;row.append(cell);}body.append(row);}
+    table.append(body);webBalances.append(table);
+  }
+  async function fetchWebBalances(credentials){
+    if(webRequestBusy)return;
+    webRequestBusy=true;webConnect.disabled=true;webRefresh.disabled=true;webStatus.textContent='Binance TR bakiyesi okunuyor…';
+    try{
+      const response=await fetch('/api/binance-tr/balance',{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json','X-Para-Request':'1'},body:JSON.stringify(credentials)});
+      const payload=await response.json().catch(()=>({}));
+      if(!response.ok)throw Error(payload.error||'EXCHANGE_READ_FAILED');
+      if(!Array.isArray(payload.balances)||payload.readOnly!==true)throw Error('INVALID_EXCHANGE_RESPONSE');
+      renderWebBalances(payload.balances);
+      webStatus.textContent='Binance TR hesabı okundu · yalnızca okuma · gerçek emirler kapalı';
+      return true;
+    }catch(error){
+      const messages={AUTH_REQUIRED:'Google oturumu sona erdi. Yeniden giriş yapın.',RATE_LIMIT:'Çok sık deneme yapıldı. Bir dakika sonra tekrar deneyin.',EXCHANGE_RATE_LIMIT:'Binance TR istek sınırına ulaşıldı.',EXCHANGE_UNAVAILABLE:'Binance TR sunucusuna erişilemiyor.',INVALID_CREDENTIALS:'API Key ve Secret alanlarını kontrol edin.',INVALID_EXCHANGE_RESPONSE:'Binance TR beklenmeyen yanıt verdi.',EXCHANGE_READ_FAILED:'Binance TR bağlantısı veya API izinleri doğrulanamadı.',SERVICE_NOT_CONFIGURED:'Web hesap okuma servisi henüz yapılandırılmadı.'};
+      webStatus.textContent=messages[error.message]||'Bakiye okunamadı. Bağlantıyı kontrol edin.';
+      webBalances.replaceChildren();
+      return false;
+    }finally{
+      webRequestBusy=false;webConnect.disabled=false;webRefresh.disabled=!webBinanceCredentials;
+    }
+  }
+  accountPanel.querySelector('#web-binance-form').addEventListener('submit',async event=>{
+    event.preventDefault();
+    if(webRequestBusy)return;
+    // Clear input elements immediately; retain secrets in this tab's memory only until disconnect.
+    const credentials={apiKey:webKey.value,secretKey:webSecret.value};
+    webKey.value='';webSecret.value='';
+    webBinanceCredentials=null;webRefresh.disabled=true;webDisconnect.disabled=true;
+    if(await fetchWebBalances(credentials)){webBinanceCredentials=credentials;webRefresh.disabled=false;webDisconnect.disabled=false;}
+  });
+  webRefresh.addEventListener('click',()=>{if(webBinanceCredentials)fetchWebBalances(webBinanceCredentials);});
+  webDisconnect.addEventListener('click',()=>{
+    webBinanceCredentials=null;webRefresh.disabled=true;webDisconnect.disabled=true;webBalances.replaceChildren();
+    webStatus.textContent='Bağlantı kesildi · anahtarlar sekme belleğinden çıkarıldı';
+  });
+  window.addEventListener('pagehide',()=>{webBinanceCredentials=null;});
   const connectionPanel=$('#local-login').closest('article');
   connectionPanel.querySelector('.eyebrow').textContent='WEB OTURUMU';
   connectionPanel.querySelector('h3').textContent='Google ile güvenli giriş';
