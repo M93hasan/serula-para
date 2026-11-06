@@ -29,13 +29,15 @@ if ($payload.mode -eq 'protect') {
 export function windowsDpapi({ mode, value, principal, provider }) {
   if (process.platform !== 'win32') throw Error('WINDOWS_KEYSTORE_REQUIRED');
   const entropy = createHash('sha256').update('PARA-AI-V2:' + principal + ':' + provider).digest('base64');
-  const result = spawnSync('pwsh.exe', [
-    '-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(SCRIPT, 'utf16le').toString('base64')
-  ], {
+  const args = ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(SCRIPT, 'utf16le').toString('base64')];
+  const options = {
     env: { ...process.env, PARA_DPAPI_PAYLOAD: JSON.stringify({ mode, value, entropy }) },
     encoding: 'utf8', timeout: 15000, stdio: ['ignore','pipe','pipe'],
     maxBuffer: 1024 * 1024, windowsHide: true
-  });
+  };
+  let result = spawnSync('pwsh.exe', args, options);
+  // PowerShell 7 is preferred; use Windows' built-in host when 7 is absent.
+  if (result.error?.code === 'ENOENT') result = spawnSync('powershell.exe', args, { ...options, timeout: 45000 });
   if (result.error || result.status !== 0 || !result.stdout) throw Error('WINDOWS_KEYSTORE_UNAVAILABLE');
   return result.stdout.trim();
 }
