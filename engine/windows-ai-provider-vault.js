@@ -29,7 +29,7 @@ if ($payload.mode -eq 'protect') {
 export function windowsDpapi({ mode, value, principal, provider }) {
   if (process.platform !== 'win32') throw Error('WINDOWS_KEYSTORE_REQUIRED');
   const entropy = createHash('sha256').update('PARA-AI-V2:' + principal + ':' + provider).digest('base64');
-  const result = spawnSync('powershell.exe', [
+  const result = spawnSync('pwsh.exe', [
     '-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(SCRIPT, 'utf16le').toString('base64')
   ], {
     env: { ...process.env, PARA_DPAPI_PAYLOAD: JSON.stringify({ mode, value, entropy }) },
