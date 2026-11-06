@@ -13,6 +13,12 @@ export class LiveOrderJournal {
     this.db=new DatabaseSync(path);
     if(path!==':memory:')chmodSync(path,0o600);
     this.db.exec('PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; CREATE TABLE IF NOT EXISTS live_orders (client_id TEXT PRIMARY KEY, symbol TEXT NOT NULL, intent TEXT NOT NULL, status TEXT NOT NULL, order_id TEXT, filled TEXT NOT NULL DEFAULT \'0\', quote_filled TEXT NOT NULL DEFAULT \'0\', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS live_active_intents (fingerprint TEXT PRIMARY KEY, client_id TEXT NOT NULL UNIQUE);');
+    // Upgrade an existing development journal without discarding unresolved orders.
+    const columns=this.db.prepare('PRAGMA table_info(live_orders)').all().map(c=>c.name);
+    if(!columns.includes('created_at')){
+      this.db.exec('ALTER TABLE live_orders ADD COLUMN created_at INTEGER NOT NULL DEFAULT 0;');
+      this.db.exec('UPDATE live_orders SET created_at=updated_at WHERE created_at=0;');
+    }
   }
   #transaction(fn){this.db.exec('BEGIN IMMEDIATE');try{const x=fn();this.db.exec('COMMIT');return x;}catch(e){this.db.exec('ROLLBACK');throw e;}}
   reserve(order,now=Date.now(),riskGuard=()=>{}){
