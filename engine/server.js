@@ -188,7 +188,7 @@ export function createServer({ token, simulator, paper = null, account = null, a
       if(!accountHistory)return res.writeHead(503).end('{"error":"history unavailable"}');
       try{return res.end(JSON.stringify(accountHistory.history()));}catch{return res.writeHead(503).end('{"error":"history unavailable"}');}
     }
-    if (account && req.method==='GET' && req.url==='/api/binance-tr/settings') return res.end(JSON.stringify({configured:account.exists(),dpapi:account instanceof WindowsBinanceAccountService,legacyAvailable:account instanceof WindowsBinanceAccountService && !account.exists() && existsSync(legacyBinancePath)}));
+    if (account && req.method==='GET' && req.url==='/api/binance-tr/settings') return res.end(JSON.stringify(account instanceof WindowsBinanceAccountService ? {configured:account.exists(),dpapi:true,legacyAvailable:!account.exists() && existsSync(legacyBinancePath)} : {configured:account.exists()}));
     if (account && req.method==='POST' && ['/api/binance-tr/save','/api/binance-tr/test','/api/binance-tr/delete','/api/binance-tr/migrate'].includes(req.url)) {
       if(req.headers.origin!==origin || req.headers['sec-fetch-site']!=='same-origin' || req.headers['content-type']!=='application/json' || req.headers['x-para-request']!=='1') {res.writeHead(403).end('{"error":"forbidden"}');return;}
       let data='', size=0;
