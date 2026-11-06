@@ -1,4 +1,5 @@
 import { startGoogle, finishGoogle, verifyGoogleSession, logoutGoogle } from './google-auth.js';
+import {WebCredentialVault} from './web-credential-vault.js';
 import { MarketData } from '../engine/market-data.js';
 import { readBinanceAccount } from './binance-readonly.js';
 import { diagnoseBinanceConnection } from './binance-diagnostic.js';
@@ -21,6 +22,47 @@ export function createWorker({ verify=verifyGoogleSession, market=()=>new Market
   }
   if(url.pathname==='/api/auth/me'&&request.method==='GET')return json({authenticated:true,email:identity.email||null});
   if(url.pathname==='/status'&&request.method==='GET')return json({mode:'web-research',realOrdersEnabled:false,halted:true});
+  if(url.pathname.startsWith('/api/web-vault/')) {
+    const action=url.pathname.slice('/api/web-vault/'.length);
+    if(!['status','save','delete'].includes(action))return json({error:'NOT_FOUND'},404);
+    if(action==='status' && request.method!=='GET')return json({error:'METHOD_NOT_ALLOWED'},405);
+    if(action!=='status' && request.method!=='POST')return json({error:'METHOD_NOT_ALLOWED'},405);
+    if(action!=='status'&&(request.headers.get('Origin')!==url.origin||
+      request.headers.get('Sec-Fetch-Site')!=='same-origin'||
+      request.headers.get('Content-Type')!=='application/json'||
+      request.headers.get('X-Para-Request')!=='1'))return json({error:'FORBIDDEN'},403);
+    if(!env.ANALYSIS_LIMIT)return json({error:'SERVICE_NOT_CONFIGURED'},503);
+    const rate=await env.ANALYSIS_LIMIT.limit({key:identity.id+':web-vault'});
+    if(!rate.success)return json({error:'RATE_LIMIT'},429);
+    let vault;
+    try{vault=new WebCredentialVault(env);}catch{return json({error:'VAULT_NOT_CONFIGURED'},503);}
+    try{
+      if(action==='status')return json({providers:await vault.status(identity.id)});
+      const input=await boundedJson(request);
+      if(!input||typeof input!=='object'||Array.isArray(input)||typeof input.provider!=='string')return json({error:'INVALID_INPUT'},400);
+      if(action==='save'){
+        if(Object.keys(input).some(k=>!['provider','credentials','replace'].includes(k)))return json({error:'INVALID_INPUT'},400);
+        await vault.save(identity.id,input.provider,input.credentials,{replace:input.replace??false});
+      }else{
+        if(Object.keys(input).some(k=>k!=='provider'))return json({error:'INVALID_INPUT'},400);
+        await vault.remove(identity.id,input.provider);
+      }
+      return json({ok:true});
+    }catch{return json({error:'VAULT_OPERATION_FAILED'},400);}
+  }
+  if(url.pathname==='/api/binance-tr/balance/saved'){
+    if(request.method!=='POST')return json({error:'METHOD_NOT_ALLOWED'},405);
+    if(request.headers.get('Origin')!==url.origin||request.headers.get('Sec-Fetch-Site')!=='same-origin'||
+      request.headers.get('Content-Type')!=='application/json'||request.headers.get('X-Para-Request')!=='1')return json({error:'FORBIDDEN'},403);
+    if(!env.ANALYSIS_LIMIT)return json({error:'SERVICE_NOT_CONFIGURED'},503);
+    const rate=await env.ANALYSIS_LIMIT.limit({key:identity.id+':binance-read'});
+    if(!rate.success)return json({error:'RATE_LIMIT'},429);
+    let credentials;
+    try{credentials=await new WebCredentialVault(env).open(identity.id,'binance_tr');}
+    catch{return json({error:'VAULT_UNAVAILABLE'},503);}
+    try{return json(await binanceReader(credentials));}
+    catch{return json({error:'EXCHANGE_READ_FAILED'},502);}
+  }
   if(url.pathname==='/api/binance-tr/diagnostic'){
     if(request.method!=='GET')return json({error:'METHOD_NOT_ALLOWED'},405);
     if(!env.ANALYSIS_LIMIT)return json({error:'SERVICE_NOT_CONFIGURED'},503);
