@@ -19,6 +19,7 @@ const symbolInfo={symbol:'BTC_TRY',type:1,spotTradingEnable:1,status:'TRADING',f
 ]};
 const balances=[{asset:'TRY',free:'500',locked:'900'},{asset:'BTC',free:'0.01',locked:'0'}];
 const inputs={symbolInfo,balances,market:{price:100000,priceTime:now-1000},now,maxNotional:'300'};
+const mockRisk=db=>({reserve:validated=>db.reserve(validated),halt:()=>({halted:true})});
 const remote=(status,executedQty='0')=>({clientId:order.clientId,symbol:order.symbol,status,origQty:order.quantity,executedQty,executedQuoteQty:executedQty==='0'?'0':String(Number(executedQty)*100000),orderId:'42'});
 
 test('exact limits, price age, available-only balance and risk cap',()=>{
@@ -49,7 +50,7 @@ test('durable idempotency, partial fills, and timeout reconciliation',async()=>{
   detail:async()=>phase===0?Promise.reject(Error('NETWORK')):phase===1?remote(1,'0.001'):remote(2,'0.002'),
   cancel:async()=>{throw Error('TIMEOUT');}
  };
- const svc=new LiveOrderService({journal:db,client,loadInputs:async()=>inputs,gate:()=>true});
+ const svc=new LiveOrderService({journal:db,client,loadInputs:async()=>inputs,gate:()=>true,risk:mockRisk(db)});
  const first=await svc.submit(order);
  assert.equal(first.status,'UNKNOWN');
  await assert.rejects(svc.submit(order),/DUPLICATE_CLIENT_ID/);
@@ -67,7 +68,7 @@ test('durable idempotency, partial fills, and timeout reconciliation',async()=>{
 test('cancel timeout cannot erase partial execution',async()=>{
  const db=new LiveOrderJournal(':memory:');db.reserve({...order,notional:'200'});
  db.observe(order.clientId,remote(1,'0.001'));
- const svc=new LiveOrderService({journal:db,client:{cancel:async()=>{throw Error('TIMEOUT')},detail:async()=>remote(3,'0.001')},loadInputs:async()=>inputs,gate:()=>true});
+ const svc=new LiveOrderService({journal:db,client:{cancel:async()=>{throw Error('TIMEOUT')},detail:async()=>remote(3,'0.001')},loadInputs:async()=>inputs,gate:()=>true,risk:mockRisk(db)});
  const state=await svc.cancel(order.clientId);
  assert.equal(state.status,'CANCELED');
  assert.equal(state.executedQty,'0.001');db.close();
