@@ -44,3 +44,63 @@ test('five roles share a 60 second total deadline and fail closed',async()=>{
  let elapsed=0,calls=0;const agent=new AIAnalyst({clock:()=>now,monotonic:()=>elapsed,model:'local',fetchImpl:async()=>{calls++;elapsed+=20000;return new Response(JSON.stringify({message:{content:JSON.stringify({analysis:'fixture'})}}));}});
  const result=await agent.analyze(snapshot());assert.equal(result.action,'BEKLE');assert.equal(result.errorCode,'MODEL_TIMEOUT');assert.equal(calls,3);
 });
+
+test('operator-pinned signed news informs local research and expires fail closed', async () => {
+  const { createHash, generateKeyPairSync, sign } = await import('node:crypto');
+  const { createSignedNewsProvider } = await import('../engine/signed-news-provider.js');
+  const { publicKey, privateKey } = generateKeyPairSync('ed25519');
+  const endpoint = 'https://news.example.test/latest';
+  const article = 'Fixture news about BTC.';
+  const payload = JSON.stringify({
+    source: 'fixture', url: endpoint, symbol: 'BTC_TRY', id: 'one',
+    issuedAt: now - 1_000, expiresAt: now + 1_000,
+    articleSha256: createHash('sha256').update(article).digest('hex'),
+  });
+  const signature = sign(null, Buffer.from(payload), privateKey).toString('base64');
+  let clock = now;
+  let mode = 'valid';
+  const prompts = [];
+  const loadNews = createSignedNewsProvider({
+    source: 'fixture', endpoint,
+    publicKey: publicKey.export({ type: 'spki', format: 'der' }).toString('base64'),
+    clock: () => clock,
+    fetchImpl: async (url, options) => {
+      assert.equal(url, endpoint + '?symbol=BTC_TRY');
+      assert.equal(options.redirect, 'error');
+      assert.equal(options.method, 'GET');
+      assert.ok(!Object.hasOwn(options.headers, 'Authorization'));
+      const content = { payload, signature, article: mode === 'tampered' ? 'Wrong article' : article };
+      if (mode === 'oversized') content.padding = 'x'.repeat(100_000);
+      return Response.json(content);
+    },
+  });
+  const analyst = new AIAnalyst({
+    model: 'local', clock: () => clock, loadNews,
+    fetchImpl: async (_url, options) => {
+      prompts.push(JSON.parse(JSON.parse(options.body).messages[1].content));
+      if (mode === 'expires') clock = now + 1_000;
+      return Response.json({ message: { content: JSON.stringify({ analysis: 'Fixture analysis' }) } });
+    },
+  });
+
+  const result = await analyst.analyze(snapshot());
+  assert.equal(result.action, 'BEKLE');
+  assert.equal(result.newsVerified, true);
+  assert.equal(result.newsEvidence.contentTruthVerified, false);
+  assert.equal(result.newsEvidence.source, 'fixture');
+  assert.equal(prompts[0].facts.news.article, article);
+  assert.ok(!JSON.stringify(prompts).includes('DO-NOT-SEND'));
+  assert.ok(!JSON.stringify(result).includes(article));
+
+  for (mode of ['tampered', 'oversized']) {
+    const invalid = await analyst.analyze(snapshot());
+    assert.equal(invalid.action, 'BEKLE');
+    assert.equal(invalid.newsVerified, false);
+    assert.equal(typeof prompts.at(-1).facts.news, 'string');
+  }
+  mode = 'expires';
+  const expired = await analyst.analyze(snapshot());
+  assert.equal(expired.action, 'BEKLE');
+  assert.equal(expired.newsVerified, false);
+  assert.equal(expired.errorCode, 'STALE_NEWS');
+});
