@@ -1,5 +1,6 @@
 import { startGoogle, finishGoogle, verifyGoogleSession, logoutGoogle } from './google-auth.js';
 import { MarketData } from '../engine/market-data.js';
+import { readBinanceAccount } from './binance-readonly.js';
 import { decide, selectMarket } from '../engine/decision.js';
 import { backtest } from '../engine/backtest.js';
 const headers={'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'};
@@ -19,6 +20,16 @@ export function createWorker({ verify=verifyGoogleSession, market=()=>new Market
   }
   if(url.pathname==='/api/auth/me'&&request.method==='GET')return json({authenticated:true,email:identity.email||null});
   if(url.pathname==='/status'&&request.method==='GET')return json({mode:'web-research',realOrdersEnabled:false,halted:true});
+  if(url.pathname==='/api/binance-tr/balance'){
+    if(request.method!=='POST')return json({error:'METHOD_NOT_ALLOWED'},405);
+    if(request.headers.get('Origin')!==url.origin||request.headers.get('Sec-Fetch-Site')!=='same-origin'||request.headers.get('Content-Type')!=='application/json'||request.headers.get('X-Para-Request')!=='1')return json({error:'FORBIDDEN'},403);
+    if(!env.ANALYSIS_LIMIT)return json({error:'SERVICE_NOT_CONFIGURED'},503);
+    const rate=await env.ANALYSIS_LIMIT.limit({key:identity.id+':binance-read'});if(!rate.success)return json({error:'RATE_LIMIT'},429);
+    let input;try{input=await boundedJson(request);}catch{return json({error:'INVALID_INPUT'},400);}
+    if(!input||typeof input!=='object'||Array.isArray(input)||Object.keys(input).some(k=>!['apiKey','secretKey'].includes(k)))return json({error:'INVALID_INPUT'},400);
+    try{const account=await readBinanceAccount(input);return json(account);}
+    catch(error){const known=['INVALID_CREDENTIALS','EXCHANGE_UNAVAILABLE','EXCHANGE_RATE_LIMIT','EXCHANGE_READ_FAILED','INVALID_EXCHANGE_RESPONSE'];const code=known.includes(error.message)?error.message:'EXCHANGE_READ_FAILED';return json({error:code},code==='INVALID_CREDENTIALS'?400:code==='EXCHANGE_RATE_LIMIT'?429:502);}
+  }
   if(url.pathname==='/api/analysis'&&request.method==='POST'){
     if(request.headers.get('Origin')!==url.origin||request.headers.get('Sec-Fetch-Site')!=='same-origin'||request.headers.get('Content-Type')!=='application/json'||request.headers.get('X-Para-Request')!=='1')return json({error:'FORBIDDEN'},403);
     if(!env.ANALYSIS_LIMIT)return json({error:'SERVICE_NOT_CONFIGURED'},503);
