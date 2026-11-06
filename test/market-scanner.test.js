@@ -112,3 +112,22 @@ test('automatic scan turns off after a WAF failure without moving to later pairs
   assert.equal(calls,1);
   auto.close();
 });
+
+test('partial candidates are discarded if a later Binance market gets WAF 403',async()=>{
+  let calls=0;
+  const scan=new MarketScanner({
+    universe:{discover:async()=>({exchangeTime:now,markets:[{symbol:'BTC_TRY',type:1},{symbol:'ETH_TRY',type:1}]})},
+    clock:()=>now,sleep:async()=>{},
+    fetchImpl:async(url)=>{
+      calls++;
+      if(calls===4)return new Response('',{status:403});
+      const data=url.includes('klines')?candles.map(c=>[c.time,c.open,c.high,c.low,c.close,c.volume,c.closeTime,c.quoteVolume]):
+        url.includes('depth')?book:[{price:'140',time:now-1000}];
+      return Response.json(data);
+    }
+  });
+  scan.start();await settle(scan);
+  assert.equal(scan.status().status,'WAF_BLOCKED');
+  assert.equal(scan.status().results.length,0);
+  assert.equal(calls,4);
+});
