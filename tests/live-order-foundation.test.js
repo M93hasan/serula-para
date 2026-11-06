@@ -4,6 +4,7 @@ import {assertValidLimitOrder,multipleOf} from '../engine/order-rules.js';
 import {LiveOrderJournal} from '../engine/live-order-journal.js';
 import {LiveOrderService} from '../engine/live-order-service.js';
 import {BinanceTROrderClient} from '../engine/binance-tr-order-client.js';
+import {createLiveOrderInputs} from '../engine/live-order-inputs.js';
 
 const now=1800000000000;
 const order={symbol:'BTC_TRY',side:'BUY',quantity:'0.002',price:'100000',clientId:'para_test_0001'};
@@ -103,4 +104,23 @@ test('same active order with another clientId is blocked, and no retry is issued
  db.observe(order.clientId,remote(2,'0.002'));
  assert.doesNotThrow(()=>db.reserve({...order,clientId:'para_test_0002',notional:'200'}));
  db.close();
+});
+
+test('same semantic order with padded decimal price/quantity is blocked',()=>{
+ const db=new LiveOrderJournal(':memory:');db.reserve({...order,notional:'200'});
+ assert.throws(()=>db.reserve({...order,quantity:'0.0020',price:'100000.00',clientId:'para_other_0003',notional:'200'}),/DUPLICATE_ACTIVE_ORDER/);
+ db.close();
+});
+test('trusted inputs require withdraw-disabled account and nonstale snapshots',async()=>{
+ let withdraw=0;
+ const exchange={
+  symbols:async()=>({code:0,timestamp:now,data:{list:[symbolInfo]}}),
+  account:async()=>({code:0,timestamp:now,data:{canTrade:1,canWithdraw:withdraw,accountAssets:balances}})
+ };
+ const market={snapshot:async()=>({asOf:now,markets:[{symbol:order.symbol,price:100000,priceTime:now-1000}]})};
+ const load=createLiveOrderInputs({exchange,market,keys:{apiKey:'a',secretKey:'b'},clock:()=>now});
+ const result=await load(order.symbol);
+ assert.deepEqual(result.balances,balances);
+ withdraw=1;
+ await assert.rejects(load(order.symbol),/ACCOUNT_PERMISSIONS_UNSAFE/);
 });
