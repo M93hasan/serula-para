@@ -145,3 +145,48 @@ test('journal survives process restart and keeps unresolved order blocked',()=>{
   db.close();
  }finally{rmSync(dir,{recursive:true,force:true});}
 });
+
+test('official-style Binance TR numeric order-detail response reconciles safely',()=>{
+ const db=new LiveOrderJournal(':memory:');
+ db.reserve({...order,notional:'200'});
+ const remote={orderId:4,clientId:order.clientId,symbol:order.symbol,side:0,type:1,
+   price:100000,status:1,origQty:0.002,executedQty:0.001,executedQuoteQty:100};
+ const result=db.observe(order.clientId,remote);
+ assert.equal(result.status,'PARTIALLY_FILLED');
+ assert.equal(result.executedQty,'0.001');
+ assert.equal(result.executedQuoteQty,'100');
+ db.close();
+});
+test('invalid or regressing exchange execution data cannot release risk hold',()=>{
+ const db=new LiveOrderJournal(':memory:');
+ db.reserve({...order,notional:'200'});
+ const valid={orderId:4,clientId:order.clientId,symbol:order.symbol,status:1,
+   origQty:0.002,executedQty:0.001,executedQuoteQty:100};
+ db.observe(order.clientId,valid);
+ for(const invalid of [
+   {...valid,executedQty:0.0001},
+   {...valid,executedQuoteQty:99},
+   {...valid,origQty:0.1},
+   {...valid,status:99},
+   {...valid,symbol:'ETH_TRY'},
+   {...valid,executedQty:0.003}
+ ])assert.throws(()=>db.observe(order.clientId,invalid));
+ assert.equal(db.get(order.clientId).executedQty,'0.001');
+ assert.equal(db.db.prepare('SELECT count(*) AS n FROM live_active_intents').get().n,1);
+ db.close();
+});
+test('network timeout after a prepared order leaves the order unresolved and cannot retry',async()=>{
+ const db=new LiveOrderJournal(':memory:');
+ let writeCalls=0;
+ const service=new LiveOrderService({
+  journal:db,gate:()=>true,risk:mockRisk(db),loadInputs:async()=>inputs,
+  client:{placeLimit:async()=>{writeCalls++;throw Error('ETIMEDOUT')},
+    detail:async()=>{throw Error('ECONNRESET')}}
+ });
+ const result=await service.submit(order);
+ assert.equal(result.status,'UNKNOWN');
+ assert.equal(writeCalls,1);
+ await assert.rejects(service.submit({...order,clientId:'para_retry_0001'}),/DUPLICATE_ACTIVE_ORDER/);
+ assert.equal(writeCalls,1);
+ db.close();
+});
