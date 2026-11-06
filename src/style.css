@@ -155,3 +155,13 @@ table,label{font-size:14px}
  .topbar h1{font-size:16px}
  .terminal-ticker{font-size:12px}
 }
+
+/* Safety dashboard: clearly separated read-only account, simulated activity and AI. */
+.terminal-safety-panel,.terminal-execution-panel{margin-top:12px}
+.terminal-status-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin:12px 0}
+.terminal-status-grid p{padding:12px;border:1px solid #363636;background:#121212;min-height:44px}
+#terminal-stop-state{font-weight:700;color:#ffb770}
+#paper-pnl-report p,#paper-execution-history p,#terminal-errors p,#paper-open-positions p{padding:8px 0;border-bottom:1px solid #303030;overflow-wrap:anywhere}
+#real-orders-note{padding:12px;border-left:3px solid #ff9900;background:#1d160c;margin:10px 0}
+#terminal-ai-decision{padding:12px;background:#121c19;border-left:3px solid #56d6a8;overflow-wrap:anywhere}
+@media(max-width:800px){.terminal-status-grid{grid-template-columns:1fr}}
