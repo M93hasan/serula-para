@@ -21,6 +21,21 @@ export class BinanceTROrderClient {
     if(json?.code!==0||!json?.data)throw Error('EXCHANGE_REJECTED');
     return json.data;
   }
+  async openOrders(symbol){
+    if(typeof symbol!=='string'||!/^[A-Z0-9]{1,20}_[A-Z0-9]{1,20}$/.test(symbol))throw Error('INVALID_SYMBOL');
+    const limit=1000;
+    const data=await this.#send('GET','/open/v1/orders',{symbol,type:'1',limit:String(limit)});
+    // A full page is not evidence that every open order was returned.
+    if(!Array.isArray(data?.list)||data.list.length>=limit)throw Error('OPEN_ORDERS_INCOMPLETE');
+    const seen=new Set();
+    return data.list.map(order=>{
+      const orderId=exchangeOrderId(order?.orderId);
+      if(order.symbol!==symbol||![-2,0,1,4].includes(order.status)||seen.has(orderId))
+        throw Error('INVALID_OPEN_ORDER');
+      seen.add(orderId);
+      return {symbol,orderId,status:order.status};
+    });
+  }
   placeLimit(order){
     if(!['BUY','SELL'].includes(order.side)||!/^para_[A-Za-z0-9_-]{8,64}$/.test(order.clientId))throw Error('INVALID_ORDER');
     return this.#send('POST','/open/v1/orders',{symbol:order.symbol,side:String(order.side==='BUY'?0:1),type:'1',quantity:order.quantity,price:order.price,timeInForce:'1',clientId:order.clientId});

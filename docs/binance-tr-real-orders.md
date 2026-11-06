@@ -47,3 +47,10 @@ Aşağıdaki sınırlar yalnızca **taslak güvenlik başlangıç değerleri** o
 2. Borsadaki **tüm açık emirler** ve hesap bakiyeleriyle başlangıç uzlaştırması, toplam ve varlık bazlı maruziyet için tüm pariteleri kapsayan güncel değerleme, gerçekleşen/net PnL ve maliyet esası kaynağı kurulmalı.
 3. Ağ bölünmesi, tekrarlı işlem niyeti, eşzamanlı istekte yarış, yeniden başlatma, gece/gün değişimi ve kısmi dolum testleri tam olarak geçmeli.
 4. Kod gözden geçirme, bağımsız güvenlik onayı ve yalnızca operatörün bilinçli olarak başlatabildiği onay akışı eklenmeli. Para çekme izni hiçbir zaman açılmamalı.
+
+## Salt okunur emir ön kontrolü
+
+- `checkOpenOrders` SQLite'taki bekleyen emirleri sorgular ve yapılandırılmış paritelerin Binance TR açık emir listelerini okur. Bozuk yanıt, dolu sayfa veya çözülmemiş emir güvenlik engeli oluşturur. Kapsam parite listesiyle sınırlıdır. Öneri ve izinli emir gönderme denemesi öncesinde çalışır. Bu kontrol uygulama başlangıcına veya arka plan zamanlayıcısına henüz bağlanmamıştır.
+- `createLiveOrderInputs` isteğe bağlı sunucu tarafı risk sağlayıcısından eksiksiz TRY kayıtlarını alabilir. Günlük gerçekleşen PnL satış tutarından dağıtılmış edinim maliyeti ve satış komisyonu düşülerek hesaplanır. Günlük net PnL, gerçekleşmemiş PnL'nin UTC gün başlangıcından bu yana değişimini de içerir. Eksik kapsam, yinelenen gerçekleşme veya dış para hareketi raporu geçersiz kılar. Üretim için doğrulanmış gerçek hesap sağlayıcısı gerekir.
+- `previewSignal` güncel mumlardan deterministik AL/SAT/BEKLE önerisi çıkarır. İmzalı haber, risk, bakiye, borsa filtreleri ve açık emir kontrolü uygulanır. Aynı parite ve mumun öneri kimliği sabittir. Öneri emir gönderme yetkisi vermez.
+- Stop-loss HALT ve pozisyon kapatma uyarısı üretir. Açık emirler HALT sonrasında salt okunur olarak uzlaştırılabilir. Borsaya satış veya iptal gönderme ayrıca yetkilendirilmelidir.
