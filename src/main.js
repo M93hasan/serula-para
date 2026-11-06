@@ -105,7 +105,8 @@ if(!webMode){
       <label>İşlem yönü <select id="manual-side"><option value="BUY">AL</option><option value="SELL">SAT</option></select></label>
       <label>Birim fiyat (TRY) <input id="manual-price" type="text" inputmode="decimal" placeholder="100000" required></label>
       <label>Miktar <input id="manual-quantity" type="text" inputmode="decimal" placeholder="0.001" required></label>
-      <p class="disclaimer">İşlem tutarı en fazla 500 TL. Fiyat ve miktar kullanıcı tarafından girilir; borsa fiyatı veya bakiye doğrulanmaz. Bu bir işlem yetkilendirmesi değildir.</p>
+      <label>Yerel kasa parolası (yalnızca bu kontrol için) <input id="manual-passphrase" type="password" autocomplete="off" minlength="16" maxlength="512" required></label>
+      <p class="disclaimer">İşlem tutarı en fazla 500 TL. Fiyat ve miktar kullanıcı tarafından girilir. Taslak öncesi taze piyasa taraması, borsa filtreleri ve salt okunur hesap bakiyesi kontrol edilir; simülasyon HALT kapalı olmalıdır. Komisyon rezervi doğrulanmaz. Bu bir işlem yetkilendirmesi değildir.</p>
       <button type="submit" class="primary full">Onay önizlemesi oluştur</button>
     </form>
     <div id="manual-review" hidden aria-live="polite">
@@ -124,7 +125,10 @@ if(!webMode){
   manualPanel.querySelector('#manual-order-form').addEventListener('submit',async e=>{
     e.preventDefault();clear();
     try{
+      const passphrase=manualPanel.querySelector('#manual-passphrase').value;
+      manualPanel.querySelector('#manual-passphrase').value='';
       const proposal=await api('/api/manual-order/preview',{
+        passphrase,
         symbol:manualPanel.querySelector('#manual-symbol').value.trim(),
         side:manualPanel.querySelector('#manual-side').value,
         price:manualPanel.querySelector('#manual-price').value.trim(),
@@ -133,7 +137,7 @@ if(!webMode){
       currentApproval=proposal;
       manualPanel.querySelector('#manual-summary').textContent=`${proposal.side==='BUY'?'AL':'SAT'} · ${proposal.symbol} · Miktar ${proposal.quantity} · Birim fiyat ${proposal.price} TRY · Tahmini toplam ${proposal.estimatedNotionalTry} TRY`;
       manualPanel.querySelector('#manual-expiry').textContent=`Son onay: ${date(proposal.expiresAt)}. Onay için "ONAYLA ${proposal.id}" yazın.`;
-      review.hidden=false;status.textContent='Taslak oluşturuldu. Onay verilse dahi gerçek emir gönderilmeyecektir.';
+      review.hidden=false;status.textContent='Salt okunur bakiye ve piyasa ön kontrolü geçti. Komisyon/son fiyat yeniden doğrulanmadan gerçek emir gönderilemez. Bu prototip hiçbir emir göndermez.';
       manualPanel.querySelector('#manual-confirmation').focus();
     }catch(err){status.textContent=err.message;}
   });
