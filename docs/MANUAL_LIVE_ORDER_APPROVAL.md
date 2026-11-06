@@ -35,3 +35,10 @@ Yeni test: `node --test test/live-order-preflight.test.js`.
 - Güncel tarama fiyatı Binance TR dokümanındaki MAIN spot piyasası için `api.binance.me` kaynağından elde edilir. Bu kaynak erişilemezse sistem başarısız kapanır.
 - Bunlar **kesin emir güvenliği değildir**: komisyon rezervi, güncel order book, derinlik, MAX_PRICE/MAX_QTY gibi tüm filtreler, fiyat güncellemesi, gerçek günlük zarar sınırı ve emir gönderiminden hemen önce tekrar kontrol eksiktir. Onaylı taslak kesinlikle borsaya gönderilmez.
 - 7 onay çekirdeği, 7 HTTP ve 8 ön kontrol testi kaynak koduna eklendi. Testlerin tamamı ve derleme bu oturumda çalıştırılamadı; GitHub DNS erişimi yok. CI sonuçlarını ayrıca doğrulayın.
+
+## Spread, piyasa derinliği ve önizleme HALT denetimi
+- Adayın market scan işlemi **tamamlanmış** olmalı; fiyat ve piyasa metrikleri en çok 30 saniye önce alınmış olmalı.
+- Scanner'ın `spread` değeri en fazla %0,5 ve raporladığı iki taraflı sınırlı derinlik, taslak nominal tutarın en az 2 katı olmalı. Bu değerler **sadece piyasa ön elemesidir**: gerçek yürütme fiyatına karşılık gelen emir defteri anlık yeniden doğrulanmadığı sürece emir gönderilemez.
+- Simülasyon SQLite durumu her açılışta HALT ile başladığından, manuel **önizleme** için ayrı, sadece bellekte tutulan kapalı/açık durumu kullanılmaktadır. Yerel `/halt` çağrısı mevcut onayı iptal eder ve bu süreçte yeni taslakları bloke eder. Yeniden açmak için yerel sunucu yeniden başlatılmalıdır. Bu tasarım gerçek emir HALT mekanizması değildir.
+- Komisyon dahil bakiye, borsa yanında gerçekleşme garantisi, order ID uzlaştırma, risk limiti ve bot yetkileri eksiktir. **Gerçek emirler kalıcı olarak kapalıdır.**
+- Test kodunda 1 ek preflight testi (3 olumsuz alt durum), 3 ek HTTP reddetme durumu ve acil HALT senaryosu bulunur; testler çalıştırılıp doğrulanmadı.
