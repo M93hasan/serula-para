@@ -18,7 +18,11 @@ export class AutonomousResearch {
     return this.status();
   }
   #halt(reason){
+    if(!this.#enabled&&this.#haltReason===reason)return;
     this.#haltReason=reason;this.setEnabled(false);
+    const decision={time:this.#clock(),symbol:'SYSTEM',action:'BEKLE',risk:'BELİRSİZ',reason:'Otonom araştırma güvenli biçimde durduruldu: '+reason,source:'Autonomous research (no orders)',autoResearch:true,errorCode:reason};
+    this.#lastDecision=decision;
+    try{this.#store.saveAI(decision);}catch{}
     try{this.#store.halt();}catch{}
     try{this.#paper?.halt();}catch{}
   }
