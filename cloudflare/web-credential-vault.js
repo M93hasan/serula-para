@@ -44,7 +44,7 @@ export class WebCredentialVault {
   async status(id){
     const owner=await this.#owner(id);
     const result=await this.db.prepare('SELECT provider FROM web_credentials WHERE owner_id = ?').bind(owner).all();
-    return providers.values().map(p=>({provider:p,configured:!!result.results?.some(x=>x.provider===p)})).toArray();
+    return Array.from(providers,p=>({provider:p,configured:!!result.results?.some(x=>x.provider===p)}));
   }
   async open(id,provider){
     this.#provider(provider);const owner=await this.#owner(id);
