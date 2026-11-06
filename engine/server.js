@@ -277,5 +277,5 @@ export function createServer({ token, simulator, paper = null, account = null, a
 if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
   const sim=new RiskStore(join(homedir(),'.para','simulation.sqlite'),{budget:100000,maxTrade:10000,maxLoss:5000});
   const paper=new PaperStore(join(homedir(),'.para','paper.sqlite'),{feeBps:10,slippageBps:10,quotes:[{asset:'TRY',budget:100000,maxTrade:10000,maxExposure:50000,maxAsset:10000,maxLoss:5000}]});
-  createServer({token:process.env.PARA_LOCAL_TOKEN,simulator:sim,paper,aiProviders:new AIProviderVault({directory:join(homedir(),'.para','ai-providers')}),account:new AccountService({path:join(homedir(),'.para','binance-tr.vault')})}).listen(8788,'127.0.0.1',()=>console.log('PARA: http://127.0.0.1:8788 (simulation only)'));
+  createServer({token:process.env.PARA_LOCAL_TOKEN,simulator:sim,paper,autoScan:true,aiProviders:new AIProviderVault({directory:join(homedir(),'.para','ai-providers')}),account:new AccountService({path:join(homedir(),'.para','binance-tr.vault')})}).listen(8788,'127.0.0.1',()=>console.log('PARA: http://127.0.0.1:8788 (simulation only)'));
 }
