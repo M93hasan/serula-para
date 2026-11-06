@@ -1,9 +1,9 @@
 // Autonomous market *research* supervisor. No order execution methods or credentials.
 // Restarts disabled, and every anomaly fails closed.
 export class AutonomousResearch {
-  #scanner;#analyst;#store;#paper;#clock;#timer=null;#enabled=false;#busy=false;#lastScan=0;#lastDecision=null;#haltReason=null;
-  constructor({scanner,analyst,store,paper=null,clock=Date.now}){
-    this.#scanner=scanner;this.#analyst=analyst;this.#store=store;this.#paper=paper;this.#clock=clock;
+  #scanner;#analyst;#store;#paper;#news;#clock;#timer=null;#enabled=false;#busy=false;#lastScan=0;#lastDecision=null;#haltReason=null;
+  constructor({scanner,analyst,store,paper=null,news=null,clock=Date.now}){
+    this.#scanner=scanner;this.#analyst=analyst;this.#store=store;this.#paper=paper;this.#news=news;this.#clock=clock;
   }
   status(){return {enabled:this.#enabled,busy:this.#busy,haltReason:this.#haltReason,lastDecision:this.#lastDecision,lastScan:this.#lastScan,realOrdersEnabled:false};}
   setEnabled(enabled){
@@ -48,7 +48,12 @@ export class AutonomousResearch {
       // Compare candidates only within the same quote currency.
       ranked.sort((a,b)=>a.symbol.localeCompare(b.symbol));
       const candidate=ranked[0];
-      const result=await this.#analyst.analyze(candidate,{catalogApproved:true});
+      const risk=candidate.indicators?.movementRisk;
+      if(risk&&risk.safe!==true)throw Error('VOLATILITY_RISK');
+      if(!this.#news)throw Error('NEWS_UNAVAILABLE');
+      const briefing=await this.#news.latest();
+      if(!briefing?.verified||!Array.isArray(briefing.articles)||!briefing.articles.length)throw Error('NEWS_UNAVAILABLE');
+      const result=await this.#analyst.analyze(candidate,{catalogApproved:true,news:briefing});
       if(!this.#enabled)return;
       if(result?.errorCode||!['AL','SAT','BEKLE'].includes(result?.action)||result.symbol!==candidate.symbol)throw Error('AI_UNAVAILABLE');
       // Research recommendations only. Missing independently verified news/risk blocks execution.
@@ -56,7 +61,7 @@ export class AutonomousResearch {
       const decision={...result,time:this.#clock(),action:verified?result.action:'BEKLE',proposedAction:candidate.researchSignal||'BEKLE',source:'Autonomous research (no orders)',autoResearch:true,reason:verified?result.reason:'Güncel veri/tarama doğrulandı ancak doğrulanmış haber, risk ve emir altyapısı eksik; BEKLE.',checks:{priceTime:candidate.priceTime,asOf:candidate.asOf,volume24:candidate.indicators.volume24,spread:candidate.indicators.spread,volatility:candidate.indicators.volatility,depthQuote:candidate.indicators.depthQuote}};
       this.#store.saveAI(decision);this.#lastDecision=decision;
     }catch(err){
-      const reason=['STALE_SCAN','NO_SAFE_CANDIDATE','AI_UNAVAILABLE'].includes(err.message)?err.message:'AI_UNAVAILABLE';
+      const reason=['STALE_SCAN','NO_SAFE_CANDIDATE','AI_UNAVAILABLE','NEWS_UNAVAILABLE','VOLATILITY_RISK'].includes(err.message)?err.message:'AI_UNAVAILABLE';
       this.#halt(reason);
     }finally{this.#busy=false;}
   }
