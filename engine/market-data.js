@@ -42,7 +42,7 @@ export class MarketData {
         if(candles.length<21||candles.some((x,i)=>i>0&&x.time!==candles[i-1].time+INTERVAL)||now-candles.at(-1).closeTime>INTERVAL*2)throw Error('Incomplete or stale candles');
         const trades=await this.#get('/api/v3/trades',new URLSearchParams({symbol:ticker,limit:'1'}));
         const last=trades.at(-1);const price=Number(last?.price),time=last?.time;
-        if(!Number.isFinite(price)||price<=0||!Number.isSafeInteger(time)||time>currentTime()+1000||currentTime()-time>300000)throw Error('Stale price');
+        if(!Number.isFinite(price)||price<=0||!Number.isSafeInteger(time)||time>currentTime()+1000||currentTime()-time>30000)throw Error('Stale price');
         selected.push({symbol,price,priceTime:time,candles});
       }
       if(!selected.length)throw Error('No eligible TR market');return {asOf:currentTime(),markets:selected};
