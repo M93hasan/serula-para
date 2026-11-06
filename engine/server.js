@@ -21,13 +21,17 @@ import { CloudAIService } from './cloud-ai-service.js';
 import { assessPaperReadiness } from './paper-gate.js';
 import { ollamaStatus } from './ollama-status.js';
 import { createLocalGoogleAuth } from './local-google-auth.js';
+import { createLocalEmailAuth } from './local-email-auth.js';
+import { LocalSessionStore } from './local-session-store.js';
 import { scannerPaperMarks } from './paper-marks.js';
 import { isFreshMarketPrice } from './market-freshness.js';
 
-export function createServer({ token, simulator, paper = null, account = null, aiProviders = null, cloudAIService = null, market = new MarketData(), universe = new MarketUniverse(), scanner = new MarketScanner({universe}), ai = new AIAnalyst(), accountHistory = null, autoScan = false, googleAuth = null, distDir = resolve('dist'),riskIntervalMs=5000 }) {
+export function createServer({ token, simulator, paper = null, account = null, aiProviders = null, cloudAIService = null, market = new MarketData(), universe = new MarketUniverse(), scanner = new MarketScanner({universe}), ai = new AIAnalyst(), accountHistory = null, autoScan = false, googleAuth = null, emailAuth = null, sessionStore = null, distDir = resolve('dist'),riskIntervalMs=5000 }) {
   if (typeof token !== 'string' || Buffer.byteLength(token) < 32) throw new Error('Set a random token of at least 32 bytes');
   const expected = Buffer.from(`Bearer ${token}`);
-  const localGoogle=googleAuth||createLocalGoogleAuth();
+  const sessions=sessionStore||new LocalSessionStore();
+  const localGoogle=googleAuth||createLocalGoogleAuth({clientId:process.env.PARA_GOOGLE_CLIENT_ID||'',clientSecret:process.env.PARA_GOOGLE_CLIENT_SECRET||'',allowedEmail:process.env.PARA_AUTH_EMAIL||'',allowedSub:process.env.PARA_GOOGLE_ALLOWED_SUB||'',sessionStore:sessions});
+  const localEmail=emailAuth||createLocalEmailAuth({allowedEmail:process.env.PARA_AUTH_EMAIL||'',resendKey:process.env.PARA_RESEND_API_KEY||'',fromEmail:process.env.PARA_EMAIL_FROM||'',sessionStore:sessions});
   let latestMarkets=[];
   let latestScanDecision=null;
   const cloudAI=cloudAIService||(aiProviders?new CloudAIService({vault:aiProviders}):null);
@@ -38,6 +42,13 @@ export function createServer({ token, simulator, paper = null, account = null, a
     const port=String(req.socket.localPort), host=`127.0.0.1:${port}`, origin=`http://${host}`;
     const googleCallback=req.method==='GET'&&req.url?.startsWith('/auth/google/callback?');
     if(req.headers.host!==host || (req.headers.origin && req.headers.origin!==origin) || (req.headers['sec-fetch-site'] && !['same-origin','none',...(googleCallback?['cross-site']:[])].includes(req.headers['sec-fetch-site']))) {res.writeHead(403).end(); return;}
+    if(req.url==='/auth/email/status'||req.url==='/auth/email/start'||req.url==='/auth/email/verify'){
+      try{
+        const path=new URL(req.url,origin).pathname;
+        const result=await localEmail.handle(path,new Request(new URL(req.url,origin),{method:req.method,headers:req.headers,body:req.method==='POST'?req:undefined,duplex:'half'}));
+        if(result){res.writeHead(result.status,Object.fromEntries(result.headers));res.end(await result.text());return;}
+      }catch{res.writeHead(503).end();return;}
+    }
     if(req.url==='/auth/google/status'||req.url==='/auth/google/start'||req.url==='/auth/google/logout'||req.url?.startsWith('/auth/google/callback?')){
       try{
         const result=await localGoogle.handle(new URL(req.url,origin).pathname,new Request(new URL(req.url,origin),{method:req.method,headers:req.headers}));
@@ -50,11 +61,11 @@ export function createServer({ token, simulator, paper = null, account = null, a
     res.setHeader('Content-Type','application/json');
     const auth=Buffer.from(req.headers.authorization || '');
     const bearerValid=auth.length===expected.length&&timingSafeEqual(auth,expected);
-    const googleSession=localGoogle.user(req.headers.cookie||'');
+    const googleSession=sessions.user(req.headers.cookie||'')||localGoogle.user(req.headers.cookie||'');
     if(!bearerValid&&!googleSession) {res.writeHead(403).end('{"error":"forbidden"}');return;}
     // Identity is derived from the verified session, never from client input.
-    const aiPrincipal=googleSession?'google:'+googleSession.id:'local-desktop';
-    if(req.method==='GET'&&req.url==='/api/auth/me')return res.end(JSON.stringify({authenticated:true,provider:googleSession?'google':'local-token'}));
+    const aiPrincipal=googleSession?googleSession.provider+':'+googleSession.id:'local-desktop';
+    if(req.method==='GET'&&req.url==='/api/auth/me')return res.end(JSON.stringify({authenticated:true,provider:googleSession?(googleSession.provider||'google'):'local-token'}));
     // Cookie sessions may never bypass the same-origin check on any mutation.
     if(!bearerValid&&googleSession&&req.method!=='GET'&&req.method!=='HEAD'&&
       (req.headers.origin!==origin||req.headers['sec-fetch-site']!=='same-origin'||req.headers['content-type']!=='application/json'||req.headers['x-para-request']!=='1')){
@@ -219,7 +230,7 @@ export function createServer({ token, simulator, paper = null, account = null, a
     res.writeHead(404).end('{"error":"not found"}');
   });
   if(paper){let monitoring=false;const timer=setInterval(async()=>{if(monitoring)return;monitoring=true;try{if(!paper.status().positions.length)return;let marks=[];try{marks=await scannerPaperMarks({paper,scanner,universe});}catch{}paper.assess(marks);}catch{try{paper.halt();}catch{}}finally{monitoring=false;}},riskIntervalMs);timer.unref();server.on('close',()=>clearInterval(timer));}
-  server.on('close',()=>{scanAutomation.close();localGoogle.close();});
+  server.on('close',()=>{scanAutomation.close();localGoogle.close();localEmail.close();});
   if(autoScan)server.once('listening',()=>{try{scanAutomation.setEnabled(true);}catch{/* fail closed */}});
   return server;
 }
