@@ -116,7 +116,7 @@ export function createServer({ token, simulator, paper = null, account = null, a
     // Read-only market snapshot for chart refreshes; never executes a simulation or order.
     if(req.method==='GET' && req.url==='/api/markets/chart') {
       try {
-        const snapshot=await market.snapshot();
+        const snapshot=await market.snapshot({includeBnbPrice:true});
         latestMarkets=snapshot.markets;
         return res.end(JSON.stringify(snapshot));
       } catch(err) {
