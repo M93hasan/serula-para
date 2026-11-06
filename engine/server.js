@@ -23,6 +23,7 @@ import { ollamaStatus } from './ollama-status.js';
 import { createLocalGoogleAuth } from './local-google-auth.js';
 import { scannerPaperMarks } from './paper-marks.js';
 import { ManualOrderApproval } from './manual-order-approval.js';
+import { checkLiveOrderPreflight } from './live-order-preflight.js';
 
 export function createServer({ token, simulator, paper = null, account = null, aiProviders = null, cloudAIService = null, market = new MarketData(), universe = new MarketUniverse(), scanner = new MarketScanner({universe}), ai = new AIAnalyst(), accountHistory = null, autoScan = false, googleAuth = null, distDir = resolve('dist'),riskIntervalMs=5000 }) {
   if (typeof token !== 'string' || Buffer.byteLength(token) < 32) throw new Error('Set a random token of at least 32 bytes');
@@ -99,7 +100,36 @@ export function createServer({ token, simulator, paper = null, account = null, a
         for await(const chunk of req) {size+=chunk.length;if(size>1024)return res.writeHead(413).end('{"error":"too large"}');raw+=chunk.toString('utf8');}
         const payload=JSON.parse(raw);
         let result;
-        if(req.url.endsWith('/preview'))result=manualApproval.propose(payload);
+        if(req.url.endsWith('/preview')){
+          manualApproval.cancel();
+          if(!payload||typeof payload!=='object'||Array.isArray(payload)||
+             Object.keys(payload).sort().join(',')!=='passphrase,price,quantity,side,symbol'||
+             typeof payload.passphrase!=='string'||payload.passphrase.length<16||payload.passphrase.length>512)
+            throw Error('INVALID_ORDER');
+          if(!account||!account.exists())throw Error('ACCOUNT_NOT_CONFIGURED');
+          const {passphrase,...order}=payload;
+          // Require an independently fetched and recent live catalogue and market trade.
+          const catalog=await universe.discover();
+          const matches=catalog.markets?.filter(m=>m.symbol===order.symbol&&m.type===1)??[];
+          const scanMatches=scanner.status().results?.filter(m=>m.symbol===order.symbol&&m.status==='candidate')??[];
+          if(matches.length!==1||scanMatches.length!==1)throw Error('MARKET_NOT_READY');
+          const observed=scanMatches[0];
+          const price=observed.price;
+          if(typeof price!=='number'||!Number.isFinite(price)||price<=0)throw Error('MARKET_NOT_READY');
+          const balances=await account.balance(passphrase);
+          const risk=checkLiveOrderPreflight({
+            order,balances,
+            market:{...matches[0],exchangeTime:catalog.exchangeTime,
+              priceTime:observed.priceTime,price:String(price)},
+            limits:{halted:simulator.status().halted,realOrdersEnabled:false,
+              maxOrderTry:'500',maxPriceDeviationBps:100}
+          });
+          if(!risk.eligible)throw Error('PREFLIGHT_'+risk.reason);
+          result={...manualApproval.propose(order),preflight: {
+            reason:risk.reason,notionalTry:risk.notionalTry,feeReserveVerified:false,
+            checkedAt:Date.now(),executionEnabled:false
+          }};
+        }
         else if(req.url.endsWith('/reject')){
           if(!payload||typeof payload!=='object'||Array.isArray(payload)||Object.keys(payload).length!==0)throw Error('INVALID_ORDER');
           manualApproval.cancel();result={status:'REJECTED',executionEnabled:false};
@@ -110,9 +140,10 @@ export function createServer({ token, simulator, paper = null, account = null, a
         }
         return res.end(JSON.stringify(result));
       }catch(error){
-        const allowed=['INVALID_ORDER','INVALID_APPROVAL','APPROVAL_UNAVAILABLE','APPROVAL_REJECTED','ORDER_LIMIT'];
+        const allowed=['INVALID_ORDER','INVALID_APPROVAL','APPROVAL_UNAVAILABLE','APPROVAL_REJECTED','ORDER_LIMIT','ACCOUNT_NOT_CONFIGURED','MARKET_NOT_READY','EXCHANGE_READ_FAILED','VAULT_UNLOCK_FAILED'];
+        const failure=allowed.includes(error.message)?error.message:error.message.startsWith('PREFLIGHT_')?error.message:'PREVIEW_UNAVAILABLE';
         return res.writeHead(error.message==='APPROVAL_UNAVAILABLE'||error.message==='APPROVAL_REJECTED'?409:400)
-          .end(JSON.stringify({error:allowed.includes(error.message)?error.message:'INVALID_ORDER'}));
+          .end(JSON.stringify({error:failure}));
       }
     }
     if(req.method==='GET' && req.url==='/api/ai/health')return res.end(JSON.stringify(await ollamaStatus()));
