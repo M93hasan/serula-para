@@ -23,6 +23,7 @@ import { ollamaStatus } from './ollama-status.js';
 import { createLocalGoogleAuth } from './local-google-auth.js';
 import { scannerPaperMarks } from './paper-marks.js';
 import { AutonomousResearch } from './autonomous-research.js';
+import { TrustedNews } from './trusted-news.js';
 import { cloudConnectivity } from './cloud-connectivity.js';
 import { MarketEventLog } from './market-event-log.js';
 
@@ -35,8 +36,9 @@ export function createServer({ token, simulator, paper = null, account = null, a
   let haltGeneration=0;
   let emergencyStopped=false;
   const cloudAI=cloudAIService||(aiProviders?new CloudAIService({vault:aiProviders}):null);
+  const trustedNews=new TrustedNews();
   const scanAutomation = new ScanAutomation(scanner);
-  const autonomousResearch = new AutonomousResearch({scanner,analyst:ai,store:simulator,paper});
+  const autonomousResearch = new AutonomousResearch({scanner,analyst:ai,store:simulator,paper,news:trustedNews});
   const eventLog=new MarketEventLog({path:join(homedir(),'.para','market-events.jsonl')});
   const logEvent=event=>{try{eventLog.record(event);}catch{/* never interrupt read-only market requests */}};
   const server=http.createServer(async (req, res) => {
@@ -94,6 +96,10 @@ export function createServer({ token, simulator, paper = null, account = null, a
     if(req.method==='GET' && req.url==='/api/paper/status') {
       if(!paper)return res.writeHead(503).end('{"error":"paper unavailable"}');
       try{let marks=[];try{marks=await scannerPaperMarks({paper,scanner,universe});}catch{}return res.end(JSON.stringify({status:paper.status(),valuation:paper.value(marks),performance:paper.report(marks),history:paper.history(),gateHistory:paper.gateHistory(),notice:'Varsayımsal yerel portföy. Sanal işlem bağlantısı henüz yok.'}));}catch{return res.writeHead(503).end('{"error":"paper unavailable"}');}
+    }
+    if(req.method==='GET'&&req.url==='/api/news/verified'){
+      try{return res.end(JSON.stringify(await trustedNews.latest()));}
+      catch{return res.writeHead(503).end('{"error":"NEWS_UNAVAILABLE"}');}
     }
     if(req.method==='GET' && req.url==='/api/ai/health')return res.end(JSON.stringify(await ollamaStatus()));
     if(req.method==='GET' && req.url==='/api/ai/providers/connectivity'){
@@ -179,7 +185,7 @@ export function createServer({ token, simulator, paper = null, account = null, a
     if(req.method==='POST' && req.url==='/api/ai/scan-best') {
       if(emergencyStopped)return res.writeHead(409).end('{"error":"EMERGENCY_HALT"}');
       if(req.headers.origin!==origin||req.headers['sec-fetch-site']!=='same-origin'||req.headers['content-type']!=='application/json'||req.headers['x-para-request']!=='1')return res.writeHead(403).end('{"error":"forbidden"}');
-      try{const state=scanner.status(),catalog=await universe.discover();const candidate=state.results.filter(x=>x.status==='candidate'&&Date.now()-x.asOf<300000&&catalog.markets.some(m=>m.symbol===x.symbol&&m.type===1)).sort((a,b)=>a.indicators.estimatedRoundTripCost-b.indicators.estimatedRoundTripCost)[0];if(!candidate)return res.writeHead(409).end('{"error":"no fresh candidate"}');const analysisGeneration=haltGeneration;const result=await ai.analyze(candidate,{catalogApproved:true});if(analysisGeneration!==haltGeneration)return res.writeHead(409).end('{"error":"halted"}');result.startedAt=result.time;result.time=Date.now();simulator.saveAI(result);latestScanDecision={decision:result,candidate};return res.end(JSON.stringify(result));}catch{return res.writeHead(503).end('{"error":"ai unavailable"}');}
+      try{const state=scanner.status(),catalog=await universe.discover();const candidate=state.results.filter(x=>x.status==='candidate'&&Date.now()-x.asOf<300000&&catalog.markets.some(m=>m.symbol===x.symbol&&m.type===1)).sort((a,b)=>a.indicators.estimatedRoundTripCost-b.indicators.estimatedRoundTripCost)[0];if(!candidate)return res.writeHead(409).end('{"error":"no fresh candidate"}');const briefing=await trustedNews.latest();if(!briefing.verified)return res.writeHead(409).end('{"error":"NEWS_UNAVAILABLE"}');const analysisGeneration=haltGeneration;const result=await ai.analyze(candidate,{catalogApproved:true,news:briefing});if(analysisGeneration!==haltGeneration)return res.writeHead(409).end('{"error":"halted"}');result.startedAt=result.time;result.time=Date.now();simulator.saveAI(result);latestScanDecision={decision:result,candidate};return res.end(JSON.stringify(result));}catch{return res.writeHead(503).end('{"error":"ai unavailable"}');}
     }
     if(req.method==='POST' && req.url==='/halt') {
       haltGeneration++;
@@ -223,7 +229,7 @@ export function createServer({ token, simulator, paper = null, account = null, a
         const catalog=await universe.discover();
         const approved=catalog.markets.some(m=>m.symbol===input.symbol&&m.type===1);
         if(!approved)throw Error('Unsupported or disabled symbol');
-        const analysisGeneration=haltGeneration;const result=await ai.analyze(snapshot,{catalogApproved:true});if(analysisGeneration!==haltGeneration)return res.writeHead(409).end('{"error":"halted"}');result.startedAt=result.time;result.time=Date.now();simulator.saveAI(result);return res.end(JSON.stringify(result));
+        const briefing=await trustedNews.latest();const analysisGeneration=haltGeneration;const result=await ai.analyze(snapshot,{catalogApproved:true,news:briefing.verified?briefing:null});if(analysisGeneration!==haltGeneration)return res.writeHead(409).end('{"error":"halted"}');result.startedAt=result.time;result.time=Date.now();simulator.saveAI(result);return res.end(JSON.stringify(result));
       }catch{return res.writeHead(503).end('{"error":"ai unavailable"}');}
     }
     if (req.method==='GET' && req.url==='/api/binance-tr/value-history') {
