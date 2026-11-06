@@ -1,6 +1,6 @@
 // Values are approximate display estimates, never account balances or order amounts.
 export function valuePortfolio(balances,markets,now=Date.now()) {
-  const prices=new Map((markets||[]).filter(m=>Number.isFinite(m.price)&&m.price>0&&Number.isSafeInteger(m.priceTime)&&now-m.priceTime<=300000&&m.priceTime<=now+5000).map(m=>[m.symbol.replace('_TRY',''),m.price]));
+  const prices=new Map((markets||[]).filter(m=>Number.isFinite(m.price)&&m.price>0&&Number.isSafeInteger(m.priceTime)&&now>=m.priceTime&&now-m.priceTime<=(m.symbol==='BNB_TRY'?30000:300000)).map(m=>[m.symbol.replace('_TRY',''),m.price]));
   prices.set('TRY',1);let subtotal=0;const missing=[];let pricedCount=0;
   for(const b of balances) {
     const free=Number(b.free),locked=Number(b.locked);
