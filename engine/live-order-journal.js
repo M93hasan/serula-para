@@ -1,4 +1,5 @@
 import {DatabaseSync} from 'node:sqlite';
+import {createHash} from 'node:crypto';
 import {mkdirSync,chmodSync} from 'node:fs';
 import {dirname} from 'node:path';
 import {compareDecimal} from './order-rules.js';
@@ -11,13 +12,18 @@ export class LiveOrderJournal {
     if(path!==':memory:')mkdirSync(dirname(path),{recursive:true,mode:0o700});
     this.db=new DatabaseSync(path);
     if(path!==':memory:')chmodSync(path,0o600);
-    this.db.exec('PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; CREATE TABLE IF NOT EXISTS live_orders (client_id TEXT PRIMARY KEY, symbol TEXT NOT NULL, intent TEXT NOT NULL, status TEXT NOT NULL, order_id TEXT, filled TEXT NOT NULL DEFAULT \'0\', quote_filled TEXT NOT NULL DEFAULT \'0\', updated_at INTEGER NOT NULL);');
+    this.db.exec('PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; CREATE TABLE IF NOT EXISTS live_orders (client_id TEXT PRIMARY KEY, symbol TEXT NOT NULL, intent TEXT NOT NULL, status TEXT NOT NULL, order_id TEXT, filled TEXT NOT NULL DEFAULT \'0\', quote_filled TEXT NOT NULL DEFAULT \'0\', updated_at INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS live_active_intents (fingerprint TEXT PRIMARY KEY, client_id TEXT NOT NULL UNIQUE);');
   }
   #transaction(fn){this.db.exec('BEGIN IMMEDIATE');try{const x=fn();this.db.exec('COMMIT');return x;}catch(e){this.db.exec('ROLLBACK');throw e;}}
   reserve(order,now=Date.now()){
     return this.#transaction(()=>{
       if(this.db.prepare('SELECT 1 FROM live_orders WHERE client_id=?').get(order.clientId))throw Error('DUPLICATE_CLIENT_ID');
+      // The exchange does not enforce clientId uniqueness. Persist both id and
+      // semantic active-intent fingerprint before any network send.
+      const fingerprint=createHash('sha256').update(JSON.stringify([order.symbol,order.side,order.quantity,order.price])).digest('hex');
+      if(this.db.prepare('SELECT 1 FROM live_active_intents WHERE fingerprint=?').get(fingerprint))throw Error('DUPLICATE_ACTIVE_ORDER');
       this.db.prepare("INSERT INTO live_orders(client_id,symbol,intent,status,updated_at) VALUES(?, ?, ?, 'RESERVED', ?)").run(order.clientId,order.symbol,JSON.stringify(order),now);
+      this.db.prepare('INSERT INTO live_active_intents(fingerprint,client_id) VALUES(?,?)').run(fingerprint,order.clientId);
       return this.get(order.clientId);
     });
   }
@@ -43,6 +49,7 @@ export class LiveOrderJournal {
       if(TERMINAL.has(old.status)&&old.status!==status)throw Error('TERMINAL_STATE_CONFLICT');
       const orderId=remote.orderId==null?old.orderId:String(remote.orderId);
       this.db.prepare('UPDATE live_orders SET status=?,order_id=?,filled=?,quote_filled=?,updated_at=? WHERE client_id=?').run(status,orderId,filled,quoteFilled,now,clientId);
+      if(TERMINAL.has(status))this.db.prepare('DELETE FROM live_active_intents WHERE client_id=?').run(clientId);
       return this.get(clientId);
     });
   }
