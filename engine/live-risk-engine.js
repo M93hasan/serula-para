@@ -84,9 +84,17 @@ export class LiveRiskEngine{
   this.#timer=setInterval(async()=>{
    if(this.#checking||this.status().halted)return;
    this.#checking=true;
-   try{this.monitor(await this.#healthProvider());}
-   catch{this.halt('CONNECTION_FAILURE');}
-   finally{this.#checking=false;}
+   let timeout;
+   try{
+    const fresh=await Promise.race([
+     Promise.resolve().then(()=>this.#healthProvider()),
+     new Promise((_,reject)=>{
+      timeout=setTimeout(()=>reject(Error('HEALTH_PROBE_TIMEOUT')),Math.floor(this.#watchdogIntervalMs*0.6));
+     })
+    ]);
+    this.monitor(fresh);
+   }catch{this.halt('CONNECTION_FAILURE');}
+   finally{if(timeout)clearTimeout(timeout);this.#checking=false;}
   },this.#watchdogIntervalMs);
   this.#timer.unref?.();
  }
