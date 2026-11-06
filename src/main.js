@@ -489,6 +489,74 @@ if(webMode){
     webStatus.textContent='Bağlantı kesildi · anahtarlar sekme belleğinden çıkarıldı';
   });
   window.addEventListener('pagehide',()=>{webBinanceCredentials=null;});
+  // Opt-in web credential vault: only present controls after backend confirms
+  // D1 + encryption key configuration. No credentials are copied into storage.
+  const vaultPanel=document.createElement('article');
+  vaultPanel.className='panel wide';
+  vaultPanel.innerHTML=`<span class="eyebrow">WEB API KASASI</span><h3>Kayıtlı şifreli anahtarlar</h3>
+    <p id="web-vault-status" role="status">Sunucu kasası denetleniyor…</p>
+    <form id="web-vault-form" hidden autocomplete="off">
+      <label>Sağlayıcı<select id="web-vault-provider">
+        <option value="binance_tr">Binance TR</option><option value="openai">OpenAI</option>
+        <option value="gemini">Google Gemini</option><option value="anthropic">Anthropic</option>
+        <option value="deepseek">DeepSeek</option><option value="ollama_cloud">Ollama Cloud</option>
+      </select></label>
+      <label>API Key<input id="web-vault-key" type="password" autocomplete="new-password" maxlength="512" required></label>
+      <label id="web-vault-second-label">API Secret<input id="web-vault-second" type="password" autocomplete="new-password" maxlength="512" required></label>
+      <div class="button-row"><button type="submit" class="primary">Şifreli kaydet</button>
+        <button id="web-vault-delete" type="button">Kayıtlı anahtarı sil</button>
+        <button id="web-vault-balance" type="button">Kayıtlı Binance hesabını oku</button></div>
+    </form>`;
+  $('#view-settings .grid').append(vaultPanel);
+  const vaultStatus=vaultPanel.querySelector('#web-vault-status');
+  const vaultForm=vaultPanel.querySelector('#web-vault-form');
+  const vaultProvider=vaultPanel.querySelector('#web-vault-provider');
+  const vaultKey=vaultPanel.querySelector('#web-vault-key');
+  const vaultSecond=vaultPanel.querySelector('#web-vault-second');
+  function updateVaultProvider(){
+    const isBinance=vaultProvider.value==='binance_tr';
+    vaultPanel.querySelector('#web-vault-second-label').firstChild.textContent=isBinance?'API Secret':'Model adı';
+    vaultSecond.type=isBinance?'password':'text';
+    vaultSecond.autocomplete=isBinance?'new-password':'off';
+    vaultSecond.placeholder=isBinance?'':'İsteğe bağlı';
+    vaultSecond.required=isBinance;
+    vaultPanel.querySelector('#web-vault-balance').disabled=!isBinance;
+    vaultKey.value='';vaultSecond.value='';
+  }
+  vaultProvider.addEventListener('change',updateVaultProvider);
+  updateVaultProvider();
+  async function vaultRequest(path,payload){
+    const response=await fetch(path,{method:'POST',credentials:'same-origin',cache:'no-store',
+      headers:{'Content-Type':'application/json','X-Para-Request':'1'},body:JSON.stringify(payload)});
+    if(!response.ok)throw Error('Kasa isteği başarısız (HTTP '+response.status+').');
+    return response.json();
+  }
+  fetch('/api/web-vault/status',{credentials:'same-origin',cache:'no-store'})
+    .then(async response=>{if(!response.ok)throw Error('Kasa hazır değil. D1 ve şifreleme anahtarı sunucuda yapılandırılmalı.');return response.json();})
+    .then(data=>{vaultForm.hidden=false;vaultStatus.textContent='Şifreli sunucu kasası kullanılabilir. Kayıtlar yalnızca Google hesabınıza aittir.';})
+    .catch(e=>{vaultForm.hidden=true;vaultStatus.textContent=e.message;});
+  vaultForm.addEventListener('submit',async e=>{
+    e.preventDefault();
+    const provider=vaultProvider.value,apiKey=vaultKey.value,second=vaultSecond.value;
+    vaultKey.value='';vaultSecond.value='';
+    const credentials=provider==='binance_tr'?{apiKey,secretKey:second}:{apiKey,model:second};
+    try{await vaultRequest('/api/web-vault/save',{provider,credentials,replace:false});vaultStatus.textContent='Anahtar sunucuda şifreli kaydedildi.';}
+    catch{vaultStatus.textContent='Kaydetme başarısız. Bu sağlayıcı kayıtlı olabilir; değiştirme için önce eski kaydı silin.';}
+  });
+  vaultPanel.querySelector('#web-vault-delete').addEventListener('click',async()=>{
+    if(!confirm('Bu sağlayıcının şifreli kaydı silinsin mi?'))return;
+    try{await vaultRequest('/api/web-vault/delete',{provider:vaultProvider.value});vaultStatus.textContent='Kasa kaydı silindi.';}
+    catch{vaultStatus.textContent='Kayıt silinemedi.';}
+  });
+  vaultPanel.querySelector('#web-vault-balance').addEventListener('click',async()=>{
+    vaultStatus.textContent='Kayıtlı Binance TR bakiyesi okunuyor…';
+    try{
+      const response=await vaultRequest('/api/binance-tr/balance/saved',{});
+      if(!response.readOnly||!Array.isArray(response.balances))throw Error('INVALID_RESPONSE');
+      renderWebBalances(response.balances);
+      vaultStatus.textContent='Bakiye sunucuda çözülen anahtarla salt okunur alındı. Gerçek emirler kapalı.';
+    }catch{vaultStatus.textContent='Kayıtlı hesap okunamadı. API bağlantısı veya servis yapılandırmasını kontrol edin.';}
+  });
   const connectionPanel=$('#local-login').closest('article');
   connectionPanel.querySelector('.eyebrow').textContent='WEB OTURUMU';
   connectionPanel.querySelector('h3').textContent='Google ile güvenli giriş';
