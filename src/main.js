@@ -301,6 +301,30 @@ const aiPerformance=document.createElement('div');aiPerformance.innerHTML='<h3>A
 const universePanel=document.createElement('article');universePanel.className='panel';universePanel.innerHTML='<h3>Binance TR parite keşfi</h3><p>Aktif spot pariteleri listele ve tür-1 pariteyi analiz için seç. Diğer piyasa türleri, doğrulanmamış fiyatlar ve borsa filtreleri güvenli şekilde dışlanır. Bu bir sanal işlem etkinleştirmesi değildir.</p><button id="universe-load">Pariteleri keşfet</button><p id="universe-status" role="status">Henüz liste alınmadı.</p><div id="universe-list"></div>';$('#view-markets').append(universePanel);
 $('#universe-load').addEventListener('click',async()=>{try{const r=await api('/api/markets/universe');text('#universe-status',`Listelenen: ${r.listed} · Spot etkin: ${r.eligible} · Elenen: ${r.ineligible} · Bu listeden yalnızca tür-1 spot pariteler analiz edilebilir.`);const box=$('#universe-list');box.replaceChildren();for(const item of r.markets){const row=document.createElement('div');row.className='asset';const label=document.createElement('span');label.textContent=`${item.symbol.replace('_',' / ')} · ${item.type===1?'spot analizine uygun':'veri bağlayıcısı doğrulanmadı'}`;row.append(label);if(item.type===1){const select=document.createElement('button');select.type='button';select.textContent='Analiz için seç';select.addEventListener('click',()=>{switchPair(item.symbol);navigate('simulation');text('#analysis-status',`${item.symbol.replace('_',' / ')} seçildi. Tutarları ${item.quoteAsset} cinsinden girin; doğrulama yapılmadan alım/satım yok.`);});row.append(select);}box.append(row);}}catch{text('#universe-status','Parite listesine ulaşılamadı; bağlantıyı ve bölgesel erişimi kontrol edin.');}});
 const scanPanel=document.createElement('article');scanPanel.className='panel';scanPanel.innerHTML='<h3>Piyasa ön taraması · deneysel</h3><p>Type-1 pariteler sırayla taranır. Diğer türler, maliyet varsayımları ve eksik veriler ayrıca gösterilir; öneri veya garantili getiri değildir.</p><button id="scan-start">Taramayı başlat</button> <button id="scan-refresh">Durumu güncelle</button> <button id="scan-auto-on">Otomatik taramayı aç</button> <button id="scan-auto-off">Sonraki otomatik taramaları durdur</button> <button id="scan-ai">En düşük maliyetli adayı AI ile incele</button><p id="scan-auto-status">Otomatik tarama: durum alınıyor.</p><p id="scan-status" role="status">Tarama başlatılmadı.</p><div id="scan-list"></div>';$('#view-markets').append(scanPanel);
+const autonomyPanel=document.createElement('article');
+autonomyPanel.className='panel';
+autonomyPanel.innerHTML='<h3>Otonom AI piyasa araştırması</h3><p>Önceden sınırlı piyasa filtreleriyle otomatik tarama ve karar kaydı. Gerçek veya sanal emir göndermez. AI/veri hatasında güvenli durdurma uygular; yeniden başlatma kullanıcı kontrolündedir.</p><button id="auto-research-on">Otonom araştırmayı başlat</button> <button id="auto-research-off">Durdur</button><p id="auto-research-status" role="status">Durum sorgulanıyor.</p><button id="cloud-connectivity-check">Bulut AI ağ bağlantılarını test et</button><p id="cloud-connectivity-status" role="status">API anahtarları gönderilmez; hesap yetkisi doğrulanmaz.</p>';
+$('#view-markets').append(autonomyPanel);
+async function refreshAutonomousResearch(){
+  if(!token)return;
+  try{
+    const state=await api('/api/ai/autonomous');
+    text('#auto-research-status',`Otonom araştırma: ${state.enabled?'AÇIK':'KAPALI'} · Gerçek emirler kapalı${state.haltReason?' · Durdurma: '+state.haltReason:''}${state.lastDecision?' · Son karar: '+state.lastDecision.symbol+' '+state.lastDecision.action+' ('+date(state.lastDecision.time)+')':''}`);
+  }catch{text('#auto-research-status','Otonom araştırma durumuna erişilemiyor.');}
+}
+for(const [id,enabled] of [['auto-research-on',true],['auto-research-off',false]]){
+  $('#'+id).addEventListener('click',async()=>{
+    try{await api('/api/ai/autonomous',{enabled});await refreshAutonomousResearch();if(!enabled)await refreshScan();}
+    catch{text('#auto-research-status','İşlem başlatılamadı. Simülasyon HALT durumunu veya piyasa bağlantısını kontrol edin.');}
+  });
+}
+$('#cloud-connectivity-check').addEventListener('click',async()=>{
+  text('#cloud-connectivity-status','Yalnızca erişilebilirlik sınanıyor…');
+  try{const data=await api('/api/ai/providers/connectivity');
+    text('#cloud-connectivity-status',data.providers.map(p=>p.provider+': '+(p.reachable?'ağ erişimi var':'erişilemiyor')+(p.status?' (HTTP '+p.status+')':'')).join(' · ')+' · API anahtarları doğrulanmadı.');
+  }catch{text('#cloud-connectivity-status','Bağlantı kontrolü başarısız.');}
+});
+setInterval(()=>{if(token)refreshAutonomousResearch().catch(()=>{});},15000);
 $('#scan-start').addEventListener('click',async()=>{try{await api('/api/markets/scan',{});text('#scan-status','Tarama başlatıldı; ilerleme otomatik güncellenecek.');await refreshScan();}catch{text('#scan-status','Tarama başlatılamadı; yerel bağlantı veya bekleme süresini kontrol edin.');}});
 for(const [id,enabled] of [['scan-auto-on',true],['scan-auto-off',false]]){
   $(`#${id}`).addEventListener('click',async()=>{
