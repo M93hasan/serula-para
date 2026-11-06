@@ -1,11 +1,12 @@
 import http from 'node:http';
 import { fileURLToPath } from 'node:url';
 import { resolve, join } from 'node:path';
-import { readFileSync } from 'node:fs';
+import { readFileSync, existsSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { timingSafeEqual } from 'node:crypto';
 import { RiskStore } from './store.js';
 import { AccountService } from './account-service.js';
+import { WindowsBinanceAccountService } from './windows-binance-account-service.js';
 import { MarketData } from './market-data.js';
 import { decide, selectMarket } from './decision.js';
 import { backtest } from './backtest.js';
@@ -187,14 +188,15 @@ export function createServer({ token, simulator, paper = null, account = null, a
       if(!accountHistory)return res.writeHead(503).end('{"error":"history unavailable"}');
       try{return res.end(JSON.stringify(accountHistory.history()));}catch{return res.writeHead(503).end('{"error":"history unavailable"}');}
     }
-    if (account && req.method==='GET' && req.url==='/api/binance-tr/settings') return res.end(JSON.stringify({configured:account.exists()}));
-    if (account && req.method==='POST' && ['/api/binance-tr/save','/api/binance-tr/test','/api/binance-tr/delete'].includes(req.url)) {
+    if (account && req.method==='GET' && req.url==='/api/binance-tr/settings') return res.end(JSON.stringify({configured:account.exists(),dpapi:account instanceof WindowsBinanceAccountService,legacyAvailable:account instanceof WindowsBinanceAccountService && !account.exists() && existsSync(join(homedir(),'.para','binance-tr.vault'))}));
+    if (account && req.method==='POST' && ['/api/binance-tr/save','/api/binance-tr/test','/api/binance-tr/delete','/api/binance-tr/migrate'].includes(req.url)) {
       if(req.headers.origin!==origin || req.headers['sec-fetch-site']!=='same-origin' || req.headers['content-type']!=='application/json' || req.headers['x-para-request']!=='1') {res.writeHead(403).end('{"error":"forbidden"}');return;}
       let data='', size=0;
       try {
         for await (const chunk of req) {size+=chunk.length; if(size>8192) {res.writeHead(413).end('{"error":"too large"}');return;} data+=chunk.toString('utf8');}
         const input=JSON.parse(data); if(!input||typeof input!=='object'||Array.isArray(input)) throw Error('Invalid input');
         if(req.url.endsWith('/save')) {account.save(input);return res.end('{"ok":true}');}
+        if(req.url.endsWith('/migrate')) {if(!(account instanceof WindowsBinanceAccountService))throw Error('INVALID');account.migrate({legacyPath:join(homedir(),'.para','binance-tr.vault'),passphrase:input.passphrase});return res.end('{"ok":true}');}
         if(req.url.endsWith('/delete')) {account.remove(input.passphrase);return res.end('{"ok":true}');}
         const balances=await account.balance(input.passphrase);
         // All valuations require fresh observed TRY prices; a partial scan is never a total.
@@ -226,5 +228,5 @@ export function createServer({ token, simulator, paper = null, account = null, a
 if (process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1])) {
   const sim=new RiskStore(join(homedir(),'.para','simulation.sqlite'),{budget:100000,maxTrade:10000,maxLoss:5000});
   const paper=new PaperStore(join(homedir(),'.para','paper.sqlite'),{feeBps:10,slippageBps:10,quotes:[{asset:'TRY',budget:100000,maxTrade:10000,maxExposure:50000,maxAsset:10000,maxLoss:5000}]});
-  createServer({token:process.env.PARA_LOCAL_TOKEN,simulator:sim,paper,aiProviders:new AIProviderVault({directory:join(homedir(),'.para','ai-providers')}),account:new AccountService({path:join(homedir(),'.para','binance-tr.vault')})}).listen(8788,'127.0.0.1',()=>console.log('PARA: http://127.0.0.1:8788 (simulation only)'));
+  createServer({token:process.env.PARA_LOCAL_TOKEN,simulator:sim,paper,aiProviders:new AIProviderVault({directory:join(homedir(),'.para','ai-providers')}),account:process.platform==='win32' ? new WindowsBinanceAccountService({path:join(homedir(),'.para','binance-tr.dpapi')}) : new AccountService({path:join(homedir(),'.para','binance-tr.vault')})}).listen(8788,'127.0.0.1',()=>console.log('PARA: http://127.0.0.1:8788 (simulation only)'));
 }
