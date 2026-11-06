@@ -69,6 +69,7 @@ export class LiveRiskEngine{
   if(compareDecimal(aggregate,context.totalExposureTry)!==0)throw Error('RISK_DATA_INCONSISTENT');
   // Stop-loss breach is a HALT condition, not an authorization to market-sell.
   for(const p of prices){
+   if(compareDecimal(p.exposureTry,this.#limits.maxAssetExposureTry)>0)throw Error('ASSET_EXPOSURE_LIMIT');
    const cost=Number(p.costBasisTry),value=Number(p.exposureTry);
    if(cost>0&&value<cost*(1-this.#limits.stopLossBps/10000))throw Error('STOP_LOSS_TRIGGERED');
   }
@@ -134,7 +135,7 @@ export class LiveRiskEngine{
     if(pending.length)throw Error('UNRESOLVED_ORDERS');
    });
   }catch(e){
-   if(['RISK_DATA_UNAVAILABLE','RISK_DATA_INCONSISTENT','STOP_LOSS_TRIGGERED','DAILY_LOSS_LIMIT','TOTAL_EXPOSURE_LIMIT'].includes(e.message))this.halt(e.message);
+   if(['RISK_DATA_UNAVAILABLE','RISK_DATA_INCONSISTENT','STOP_LOSS_TRIGGERED','DAILY_LOSS_LIMIT','TOTAL_EXPOSURE_LIMIT','ASSET_EXPOSURE_LIMIT'].includes(e.message))this.halt(e.message);
    throw e;
   }
  }
