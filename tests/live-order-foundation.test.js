@@ -71,10 +71,27 @@ test('cancel timeout cannot erase partial execution',async()=>{
 test('signed client uses only allowlisted paths and never withdrawal routes',async()=>{
  const seen=[];
  const fetchImpl=async(url,opts)=>{seen.push({url,opts});return {ok:true,json:async()=>({code:0,data:{orderId:'42'}})}};
- const cli=new BinanceTROrderClient({fetchImpl,clock:()=>now,keys:{apiKey:'test-key',secretKey:'test-secret'}});
+ const cli=new BinanceTROrderClient({fetchImpl,clock:()=>now,keys:{apiKey:'test-key',secretKey:'test-secret'},writeApproval:()=>true});
  await cli.placeLimit(order);await cli.detail(order.clientId);await cli.cancel(order.clientId);
  assert.deepEqual(seen.map(x=>new URL(x.url).pathname),['/open/v1/orders','/open/v1/orders/detail','/open/v1/orders/cancel']);
  assert.deepEqual(seen.map(x=>x.opts.method),['POST','GET','POST']);
  assert.ok(seen.every(x=>new URL(x.url).searchParams.has('signature')&&x.opts.headers['X-MBX-APIKEY']==='test-key'));
  assert.ok(seen.every(x=>!x.url.includes('withdraw')));
+});
+
+test('exchange transport denies writing without independent approval',async()=>{
+ let called=0;
+ const cli=new BinanceTROrderClient({fetchImpl:async()=>{called++;throw Error('should not call network')},keys:{apiKey:'key',secretKey:'secret'}});
+ await assert.rejects(cli.placeLimit(order),/LIVE_ORDERS_DISABLED/);
+ await assert.rejects(cli.cancel(order.clientId),/LIVE_ORDERS_DISABLED/);
+ assert.equal(called,0);
+});
+test('fill quantities cannot regress or exceed original order',()=>{
+ const db=new LiveOrderJournal(':memory:');
+ db.reserve({...order,notional:'200'});
+ db.observe(order.clientId,remote(1,'0.001'));
+ assert.throws(()=>db.observe(order.clientId,remote(0,'0')),/INVALID_FILL_PROGRESS/);
+ assert.throws(()=>db.observe(order.clientId,remote(2,'0.003')),/INVALID_FILL_PROGRESS/);
+ assert.equal(db.get(order.clientId).executedQty,'0.001');
+ db.close();
 });
