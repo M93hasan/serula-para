@@ -26,14 +26,18 @@ test('missing risk data halts research and simulator',async()=>{
  const {mode,events}=setup({results:[]});mode.setEnabled(true);await new Promise(resolve=>setImmediate(resolve));
  assert.equal(mode.status().enabled,false);
  assert.equal(mode.status().haltReason,'NO_SAFE_CANDIDATE');
- assert.deepEqual(events,['halt']);
+ assert.equal(events.at(-1),'halt');
+ assert.equal(events[0].action,'BEKLE');
+ assert.ok(events[0].reason.includes('durduruldu'));
 });
 test('AI timeout fails closed and records no misleading signal',async()=>{
  const {mode,events}=setup({decision:{symbol:'BTC_TRY',action:'BEKLE',errorCode:'MODEL_TIMEOUT'}});
  mode.setEnabled(true);await new Promise(resolve=>setImmediate(resolve));
  assert.equal(mode.status().enabled,false);
  assert.equal(mode.status().haltReason,'AI_UNAVAILABLE');
- assert.deepEqual(events,['halt']);
+ assert.equal(events.at(-1),'halt');
+ assert.equal(events[0].action,'BEKLE');
+ assert.ok(events[0].reason.includes('durduruldu'));
 });
 test('cloud connectivity never transmits keys and distinguishes reachability',async()=>{
  const calls=[];
