@@ -178,7 +178,7 @@ function scheduleMarketReconnect(){
   reportMarketConnection(false,`Bağlantı kesildi · ${Math.round(delay/1000)} saniye sonra tekrar denenecek (deneme ${marketFailures})`);
   marketReconnectTimer=setTimeout(()=>{
     marketReconnectTimer=null;
-    if(!token)return;
+    if(!token||!navigator.onLine)return;
     if(snapshot?.markets?.length)refreshLivePrices({force:true});
     else loadMarketOverview();
   },delay);
@@ -189,6 +189,7 @@ function marketRequestSucceeded(){
 }
 async function loadMarketOverview(){
   if(!token||overviewLoading||marketReconnectTimer!==null)return;
+  if(!navigator.onLine){reportMarketConnection(false,'Çevrimdışı · internet bağlantısı bekleniyor');return;}
   overviewLoading=true;
   text('#chart-subtitle','Binance TR piyasa verileri alınıyor…');
   try{
@@ -208,6 +209,7 @@ async function loadMarketOverview(){
 let pricesLoading=false;
 async function refreshLivePrices({force=false}={}){
   if(!token||pricesLoading||overviewLoading||!snapshot?.markets?.length||marketReconnectTimer!==null||(!force&&document.hidden))return;
+  if(!navigator.onLine){reportMarketConnection(false,'Çevrimdışı · internet bağlantısı bekleniyor');return;}
   pricesLoading=true;
   try{
     const data=await api('/api/markets/prices');
