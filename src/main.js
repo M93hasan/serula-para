@@ -1,4 +1,5 @@
 import './style.css';
+import { chooseLaunchMode } from './launch-mode.js';
 import { createChart, CandlestickSeries, AreaSeries } from 'lightweight-charts';
 import { tryPrices, valuePortfolio } from './portfolio.js';
 import { isFreshMarketPrice } from '../engine/market-freshness.js';
@@ -38,6 +39,9 @@ app.innerHTML=`<div class="shell"><aside class="sidebar"><div class="brand"><div
     <section class="setup-step" data-setup-step="google" hidden>
       <h3>Google hesabınla giriş yap</h3><p>Bu bilgisayardaki PARA oturumunu yalnızca izin verilen Google hesabı açabilir.</p>
       <button id="setup-google-login" class="primary full" type="button">Google ile giriş yap</button>
+      <form id="setup-email-start" hidden><label>E-posta adresi<input id="setup-email-address" type="email" autocomplete="email" required></label><button class="full" type="submit">Tek kullanımlık kod gönder</button></form>
+      <form id="setup-email-verify" hidden><label>6 haneli giriş kodu<input id="setup-email-code" type="text" inputmode="numeric" pattern="[0-9]{6}" minlength="6" maxlength="6" autocomplete="one-time-code" required></label><button class="primary full" type="submit">Kodu doğrula ve giriş yap</button></form>
+      <p id="setup-email-status" role="status"></p>
       <form id="setup-local-login" hidden><label>Yerel kurtarma anahtarı<input id="setup-local-token" type="password" autocomplete="off" required minlength="32"></label><button class="full" type="submit">Yerel anahtarla devam et</button></form>
       <p id="setup-google-status" role="status">Google girişi kontrol ediliyor.</p>
     </section>
@@ -164,6 +168,23 @@ async function activateLocalSession(){
   }
 }
 $('#local-login').addEventListener('submit',async e=>{e.preventDefault();token=$('#local-token').value;$('#local-token').value='';await activateLocalSession();});
+async function emailAuthRequest(path,payload){
+  const response=await fetch(path,{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json','X-Para-Request':'1'},body:JSON.stringify(payload)});
+  if(!response.ok)throw Error(({429:'Çok fazla deneme yapıldı. Daha sonra tekrar deneyin.',503:'E-posta gönderimi şu anda kullanılamıyor.',401:'Kod yanlış veya süresi dolmuş.'})[response.status]||'E-posta girişi tamamlanamadı.');
+  return response.json();
+}
+$('#setup-email-start').addEventListener('submit',async e=>{
+  e.preventDefault();
+  const email=$('#setup-email-address').value.trim();
+  try{await emailAuthRequest('/auth/email/start',{email});$('#setup-email-verify').hidden=false;text('#setup-email-status','E-posta tanımlıysa giriş kodu gönderildi. Kod 5 dakika geçerlidir.');}
+  catch(err){text('#setup-email-status',err.message);}
+});
+$('#setup-email-verify').addEventListener('submit',async e=>{
+  e.preventDefault();
+  try{await emailAuthRequest('/auth/email/verify',{email:$('#setup-email-address').value.trim(),code:$('#setup-email-code').value.trim()});
+    $('#setup-email-code').value='';token='google-session';await activateLocalSession();
+  }catch(err){text('#setup-email-status',err.message);}
+});
 $('#setup-google-login').addEventListener('click',()=>{location.assign('/auth/google/start');});
 $('#setup-local-login').addEventListener('submit',async e=>{e.preventDefault();token=$('#setup-local-token').value;$('#setup-local-token').value='';await activateLocalSession();});
 $('#setup-binance-form').addEventListener('submit',async e=>{e.preventDefault();const form=e.currentTarget,button=form.querySelector('button');button.disabled=true;text('#setup-binance-status','Şifreli kasaya kaydediliyor…');const body={apiKey:$('#setup-tr-key').value,secretKey:$('#setup-tr-secret').value,passphrase:$('#setup-tr-pass').value,replace:false};form.reset();try{await api('/api/binance-tr/save',body);setControls(true);text('#tr-state','Kasa kayıtlı. Bağlantıyı test edin.');await syncSetupFlow(true);}catch(err){text('#setup-binance-status',err.message);}finally{button.disabled=false;}});
@@ -177,14 +198,28 @@ $('#google-logout').addEventListener('click',async()=>{
   finally{location.reload();}
 });
 if(!webMode){
-  showSetupStep('google');
-  fetch('/auth/google/status',{cache:'no-store'}).then(r=>r.json()).then(async state=>{
-    if(!state.configured){const message='Google girişi bu bilgisayarda henüz yapılandırılmadı. Yerel kurtarma anahtarı kullanılabilir.';text('#google-login-status',message);text('#setup-google-status',message);$('#setup-google-login').hidden=true;$('#setup-local-login').hidden=false;return;}
-    $('#google-login').hidden=false;text('#google-login-status','Google oturumu yalnızca bu Windows bilgisayarında geçerlidir. Binance kasası ayrıca korunur.');
-    const me=await fetch('/api/auth/me',{cache:'no-store'});
-    if(me.ok){token='google-session';await activateLocalSession();return;}
-    text('#setup-google-status','Devam etmek için izin verilen Google hesabınla giriş yap.');
-  }).catch(()=>{const message='Google oturumu kontrol edilemedi; yerel kurtarma anahtarı kullanılabilir.';text('#google-login-status',message);text('#setup-google-status',message);$('#setup-google-login').hidden=true;$('#setup-local-login').hidden=false;});
+  chooseLaunchMode().then(async mode => {
+    if(mode !== 'local')return;
+    showSetupStep('google');
+    try{
+      const [google,email,me] = await Promise.all([
+        fetch('/auth/google/status',{cache:'no-store'}).then(r=>r.json()),
+        fetch('/auth/email/status',{cache:'no-store'}).then(r=>r.json()),
+        fetch('/api/auth/me',{cache:'no-store'})
+      ]);
+      $('#setup-google-login').hidden=!google.configured;
+      $('#setup-email-start').hidden=!email.configured;
+      $('#setup-local-login').hidden=false;
+      $('#google-login').hidden=!google.configured;
+      if(me.ok){token='google-session';await activateLocalSession();return;}
+      text('#setup-google-status','Google, e-posta kodu veya yerel erişim anahtarıyla devam edin.');
+    }catch{
+      $('#setup-google-login').hidden=true;
+      $('#setup-email-start').hidden=true;
+      $('#setup-local-login').hidden=false;
+      text('#setup-google-status','Oturum kontrolü başarısız. Yerel erişim anahtarını kullanın.');
+    }
+  });
 }
 
 $('#local-halt').addEventListener('click',async()=>{try{await api('/halt',{});text('#local-status','Acil durdurma etkin · gerçek emirler kapalı');}catch(e){text('#local-status',e.message);}});
@@ -356,6 +391,7 @@ $('#ai-measure').addEventListener('click',async()=>{try{const r=await api('/api/
 $('#ai-run').addEventListener('click',async()=>{const btn=$('#ai-run');btn.disabled=true;text('#ai-status','Yerel model çalışıyor…');try{const result=await api('/api/ai/analyze',{symbol:pair});showAI(result);await refreshAIHistory();text('#ai-status',result.errorCode?result.reason+' ('+result.errorCode+')':'AI araştırma analizi tamamlandı; güvenlik kararı BEKLE.');}catch{text('#ai-status','AI servisi kullanılamıyor; karar BEKLE.');}finally{btn.disabled=!token;}});
 
 if(webMode){
+  void chooseLaunchMode({currentMode:'web'});
   // Web and local engine are different trust boundaries. Google web login never unlocks a local vault.
   $('#local-login').hidden=true;
   googleBox.hidden=true;

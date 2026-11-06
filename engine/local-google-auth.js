@@ -1,3 +1,4 @@
+import {sessionCookie} from './local-session-store.js';
 import {randomBytes,createHash} from 'node:crypto';
 import {createRemoteJWKSet,jwtVerify} from 'jose';
 
@@ -11,7 +12,7 @@ const digest=x=>createHash('sha256').update(x).digest('base64url');
 const cookieName='para_local_session';
 const authHeaders={'Cache-Control':'no-store','Referrer-Policy':'no-referrer','X-Content-Type-Options':'nosniff'};
 const safeEmail=x=>typeof x==='string'&&x.length<=254&&/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(x);
-export function createLocalGoogleAuth({clientId='',clientSecret='',allowedEmail='',allowedSub='',fetchImpl=fetch,clock=Date.now,verifyIdentity}={}){
+export function createLocalGoogleAuth({clientId='',clientSecret='',allowedEmail='',allowedSub='',fetchImpl=fetch,clock=Date.now,verifyIdentity,sessionStore=null}={}){
   const configured=typeof clientId==='string'&&/^[\w.-]+\.apps\.googleusercontent\.com$/.test(clientId)
     &&(safeEmail(allowedEmail)||typeof allowedSub==='string'&&allowedSub.length>=8&&allowedSub.length<=256);
   const pending=new Map(),sessions=new Map();
@@ -23,7 +24,7 @@ export function createLocalGoogleAuth({clientId='',clientSecret='',allowedEmail=
     if(!match)return null;
     const raw=match.slice(cookieName.length+1);
     if(!/^[A-Za-z0-9_-]{43}$/.test(raw))return null;
-    cleanup();return sessions.get(digest(raw))||null;
+    cleanup();return sessionStore ? sessionStore.user(cookie) : sessions.get(digest(raw))||null;
   }
   async function verify(token,nonce){
     if(verifyIdentity)return verifyIdentity(token,nonce,clientId);
@@ -35,7 +36,7 @@ export function createLocalGoogleAuth({clientId='',clientSecret='',allowedEmail=
   async function handle(path,request){
     cleanup();
     if(path==='/auth/google/status')return new Response(JSON.stringify({configured,mode:'local',vaultUnlocked:false}),{headers:{...authHeaders,'Content-Type':'application/json'}});
-    if(!configured)return new Response('Google OIDC is not configured on this Windows device.',{status:503,headers:authHeaders});
+    if(!configured && path!=='/auth/google/logout')return new Response('Google OIDC is not configured on this Windows device.',{status:503,headers:authHeaders});
     if(path==='/auth/google/start'){
       if(request.method!=='GET')return new Response('',{status:405,headers:authHeaders});
       if(pending.size>=20)return new Response('',{status:429,headers:authHeaders});
@@ -61,14 +62,16 @@ export function createLocalGoogleAuth({clientId='',clientSecret='',allowedEmail=
         if(typeof identity.sub!=='string'||!identity.sub||identity.nonce!==previous.nonce)throw Error('INVALID_IDENTITY');
         if(allowedSub&&identity.sub!==allowedSub)throw Error('UNAUTHORIZED_ACCOUNT');
         if(allowedEmail&&(identity.email_verified!==true||typeof identity.email!=='string'||identity.email.toLowerCase()!==allowedEmail.toLowerCase()))throw Error('UNAUTHORIZED_ACCOUNT');
-        const session=random();sessions.set(digest(session),{id:identity.sub,email:identity.email||null,expires:clock()+SESSION_MS});
-        return new Response(null,{status:303,headers:{...authHeaders,Location:'/', 'Set-Cookie':`${cookieName}=${session}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${SESSION_MS/1000}`}});
+        const session=sessionStore ? sessionStore.create({id:identity.sub,email:identity.email||null,provider:'google'}) : random();
+        if(!sessionStore)sessions.set(digest(session),{id:identity.sub,email:identity.email||null,expires:clock()+SESSION_MS});
+        return new Response(null,{status:303,headers:{...authHeaders,Location:'/', 'Set-Cookie':sessionCookie(session)}});
       }catch{return new Response('Google identity verification failed.',{status:401,headers:authHeaders});}
     }
     if(path==='/auth/google/logout'){
       if(request.method!=='POST'||request.headers.get('origin')!=='http://127.0.0.1:8788'||request.headers.get('sec-fetch-site')!=='same-origin'||request.headers.get('x-para-request')!=='1')return new Response('',{status:403,headers:authHeaders});
       const cookie=request.headers.get('cookie')||'',match=cookie.split(';').map(x=>x.trim()).find(x=>x.startsWith(cookieName+'='));
-      if(match)sessions.delete(digest(match.slice(cookieName.length+1)));
+      if(sessionStore)sessionStore.revoke(cookie);
+      else if(match)sessions.delete(digest(match.slice(cookieName.length+1)));
       return new Response(JSON.stringify({ok:true}),{headers:{...authHeaders,'Content-Type':'application/json','Set-Cookie':`${cookieName}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0`}});
     }
     return null;
