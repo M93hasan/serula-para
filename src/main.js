@@ -192,6 +192,41 @@ async function saveCredentials(replace){const body={apiKey:$('#tr-key').value,se
 $('#tr-save').addEventListener('click',()=>saveCredentials(false));$('#tr-change').addEventListener('click',()=>saveCredentials(true));
 $('#tr-delete').addEventListener('click',async()=>{if(!confirm('Yerel kasadaki Binance TR bilgileri silinsin mi?'))return;const passphrase=$('#tr-pass').value;clearKeys();clearBalance();try{await api('/api/binance-tr/delete',{passphrase});setControls(false);text('#tr-state','Yerel kasa silindi. Binance TR anahtarı iptal edilmedi.');text('#tr-overview','Bağlı değil');}catch(e){text('#tr-state',e.message);}});
 $('#tr-test').addEventListener('click',async()=>{const passphrase=$('#tr-pass').value;clearKeys();clearBalance();text('#tr-state','Bağlantı test ediliyor…');try{const r=await api('/api/binance-tr/test',{passphrase});balances=r.balances;lastConnect=Date.now();text('#tr-overview','Bağlandı');text('#tr-state','Bağlandı · Gerçek hesap bakiyeleri salt okunur');text('#last-connected',`Son başarılı bağlantı (bu oturum): ${date(lastConnect)}`);renderPortfolio();refreshAccountHistory().catch(()=>{});}catch(e){text('#tr-overview','Bağlı değil');text('#tr-state',e.message);}});
+// Read-only diagnostics and open orders; credentials stay in the existing local vault.
+const exchangeReadPanel=document.createElement('article');
+exchangeReadPanel.className='panel wide';
+exchangeReadPanel.innerHTML=`<h3>Binance TR bağlantı tanılaması ve açık emirler</h3>
+  <p>Tanılama anahtar göndermez. Açık emirler yalnızca seçtiğiniz işlem çifti için salt okunur sorgulanır.</p>
+  <button type="button" id="binance-network-diagnostic">HTTP 403 / ağ bağlantısını kontrol et</button>
+  <p id="binance-network-result" role="status"></p>
+  <label>İşlem çifti<select id="binance-orders-symbol"><option value="BTC_TRY">BTC/TRY</option><option value="ETH_TRY">ETH/TRY</option></select></label>
+  <button type="button" id="binance-orders-read">Açık emirleri oku (emir göndermez)</button>
+  <p id="binance-orders-status" role="status"></p><div id="binance-orders-data"></div>`;
+$('#view-settings .grid').append(exchangeReadPanel);
+$('#binance-network-diagnostic').addEventListener('click',async()=>{
+  text('#binance-network-result','Ağ tanılaması yapılıyor…');
+  try{
+    const result=await api('/api/binance-tr/diagnostic');
+    text('#binance-network-result',result.targets.map(t=>t.name+': '+t.status+(t.httpStatus?' (HTTP '+t.httpStatus+')':'')).join(' · '));
+  }catch(e){text('#binance-network-result',e.message);}
+});
+$('#binance-orders-read').addEventListener('click',async()=>{
+  text('#binance-orders-status','Salt okunur açık emirler sorgulanıyor…');
+  const passphrase=$('#tr-pass').value;
+  $('#tr-pass').value='';
+  const symbol=$('#binance-orders-symbol').value;
+  const box=$('#binance-orders-data');box.replaceChildren();
+  try{
+    const response=await api('/api/binance-tr/open-orders',{symbol,limit:100,...(passphrase?{passphrase}:{})});
+    if(response.complete!==true||response.readOnly!==true||!Array.isArray(response.orders))throw Error('Doğrulanmamış emir yanıtı');
+    text('#binance-orders-status',response.orders.length+' açık emir bulundu. Yanıt salt okunur.');
+    for(const order of response.orders){
+      const line=document.createElement('p');
+      line.textContent=order.symbol+' · #'+order.orderId+' · '+order.price+' · '+order.origQty+' · durum: '+order.status;
+      box.append(line);
+    }
+  }catch(e){text('#binance-orders-status',e.message);}
+});
 const accountValuePanel=document.createElement('article');
 accountValuePanel.className='panel';
 accountValuePanel.innerHTML='<h3>Binance TR hesap değeri · günlük kayıtlar</h3><p>Salt okunur hesap bağlantı testinden sonra yerel SQLite veritabanına tarihli kayıt alınır. Gerçek kâr/zarar hesaplanabilmesi için işlem geçmişi ve para giriş/çıkışlarının ayrıca doğrulanması gerekir. Son kayıt canlı bakiye değildir.</p><button id="account-history-refresh">Geçmişi yenile</button><div id="account-value-history">Önce yerel motora bağlanın.</div>';
