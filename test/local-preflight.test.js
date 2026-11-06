@@ -1,4 +1,5 @@
 import test from 'node:test';
+import { spawnSync } from 'node:child_process';
 import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync, utimesSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -34,6 +35,20 @@ test('restart preserves simulated loss journal and restarts halted',()=>withDir(
   assert.ok(state.journal.some(x=>x.type==='simulated'));
   assert.equal(verifyLocalData(dir).sqlite.find(x=>x.name==='simulation.sqlite').status,'OK');
  }finally{db.close();}
+}));
+test('unclean subprocess exit preserves SQLite WAL and fail-closed risk state',()=>withDir(dir=>{
+ const path=join(dir,'simulation.sqlite'),limits={budget:1000,maxTrade:100,maxLoss:100};
+ const source=new URL('../engine/store.js',import.meta.url).href;
+ const script=`import { RiskStore } from ${JSON.stringify(source)};const db=new RiskStore(${JSON.stringify(path)},${JSON.stringify(limits)});db.start();db.evaluate({amount:80,worstCaseLoss:12});process.exit(19);`;
+ const exited=spawnSync(process.execPath,['--input-type=module','--eval',script],{encoding:'utf8'});
+ assert.equal(exited.status,19,exited.stderr);
+ const recovered=new RiskStore(path,limits);
+ try{
+  const state=recovered.status();
+  assert.equal(state.halted,true);
+  assert.equal(state.budgetRemaining,988);
+  assert.ok(state.journal.some(x=>x.type==='simulated'));
+ }finally{recovered.close();}
 }));
 test('paper journal survives a restart while paper mode returns to HALT',()=>withDir(dir=>{
  const path=join(dir,'paper.sqlite');
