@@ -1,4 +1,5 @@
 import './style.css';
+import { chooseLaunchMode } from './launch-mode.js';
 import { createChart, CandlestickSeries, AreaSeries } from 'lightweight-charts';
 import { tryPrices, valuePortfolio } from './portfolio.js';
 import { isFreshMarketPrice } from '../engine/market-freshness.js';
@@ -177,14 +178,17 @@ $('#google-logout').addEventListener('click',async()=>{
   finally{location.reload();}
 });
 if(!webMode){
-  showSetupStep('google');
-  fetch('/auth/google/status',{cache:'no-store'}).then(r=>r.json()).then(async state=>{
+  chooseLaunchMode().then(mode => {
+    if(mode !== 'local') return;
+    showSetupStep('google');
+    return fetch('/auth/google/status',{cache:'no-store'}).then(r=>r.json()).then(async state=>{
     if(!state.configured){const message='Google girişi bu bilgisayarda henüz yapılandırılmadı. Yerel kurtarma anahtarı kullanılabilir.';text('#google-login-status',message);text('#setup-google-status',message);$('#setup-google-login').hidden=true;$('#setup-local-login').hidden=false;return;}
     $('#google-login').hidden=false;text('#google-login-status','Google oturumu yalnızca bu Windows bilgisayarında geçerlidir. Binance kasası ayrıca korunur.');
     const me=await fetch('/api/auth/me',{cache:'no-store'});
     if(me.ok){token='google-session';await activateLocalSession();return;}
     text('#setup-google-status','Devam etmek için izin verilen Google hesabınla giriş yap.');
   }).catch(()=>{const message='Google oturumu kontrol edilemedi; yerel kurtarma anahtarı kullanılabilir.';text('#google-login-status',message);text('#setup-google-status',message);$('#setup-google-login').hidden=true;$('#setup-local-login').hidden=false;});
+  });
 }
 
 $('#local-halt').addEventListener('click',async()=>{try{await api('/halt',{});text('#local-status','Acil durdurma etkin · gerçek emirler kapalı');}catch(e){text('#local-status',e.message);}});
