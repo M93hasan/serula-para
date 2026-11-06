@@ -49,3 +49,15 @@ test('UI diagnostic button is independent of saved API secrets',()=>{
   assert.match(src,/fetch\('\/api\/binance-tr\/diagnostic'/);
   assert.match(src,/anahtar gerektirmez/);
 });
+
+test('web balance never posts API credentials before a successful credential-free preflight',()=>{
+  const src=readFileSync(new URL('../src/main.js',import.meta.url),'utf8');
+  const formStart=src.indexOf("accountPanel.querySelector('#web-binance-form').addEventListener('submit'");
+  const formEnd=src.indexOf("webRefresh.addEventListener('click'",formStart);
+  assert.ok(formStart>=0&&formEnd>formStart);
+  const form=src.slice(formStart,formEnd);
+  assert.match(form,/fetch\('\/api\/binance-tr\/diagnostic'/);
+  assert.match(form,/if\(!network\?\.reachable\|\|network\.status!=='HTTP_OK'\)/);
+  assert.match(form,/API anahtarların gönderilmedi/);
+  assert.ok(form.indexOf("'/api/binance-tr/diagnostic'")<form.indexOf('fetchWebBalances(credentials)'));
+});
