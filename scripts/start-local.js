@@ -19,20 +19,22 @@ try {
   const {AIProviderVault}=await import('../engine/ai-provider-vault.js');
   const {AccountService}=await import('../engine/account-service.js');
   const {AccountSnapshotStore}=await import('../engine/account-snapshot-store.js');
+  const {OrderIntentJournal}=await import('../engine/order-intent-journal.js');
   const {createServer}=await import('../engine/server.js');
   const {createLocalGoogleAuth}=await import('../engine/local-google-auth.js');
   const dir=process.env.PARA_DATA_DIR ? resolve(process.env.PARA_DATA_DIR) : join(homedir(),'.para'), token=randomBytes(32).toString('hex');
   const sim=new RiskStore(join(dir,'simulation.sqlite'),{budget:100000,maxTrade:10000,maxLoss:5000});
   const paper=new PaperStore(join(dir,'paper.sqlite'),{feeBps:10,slippageBps:10,quotes:[{asset:'TRY',budget:100000,maxTrade:10000,maxExposure:50000,maxAsset:10000,maxLoss:5000}]});
   const accountHistory=new AccountSnapshotStore(join(dir,'account-observations.sqlite'));
+  const orderJournal=new OrderIntentJournal(join(dir,'manual-order-intents.sqlite'));
   const googleAuth=createLocalGoogleAuth({
     clientId:process.env.GOOGLE_OAUTH_CLIENT_ID||'',
     clientSecret:process.env.GOOGLE_OAUTH_CLIENT_SECRET||'',
     allowedEmail:process.env.GOOGLE_ALLOWED_EMAIL||'',
     allowedSub:process.env.GOOGLE_ALLOWED_SUB||''
   });
-  const server=createServer({token,simulator:sim,paper,aiProviders:new AIProviderVault({directory:join(dir,'ai-providers')}),account:new AccountService({path:join(dir,'binance-tr.vault')}),accountHistory,autoScan:true,googleAuth});
-  server.on('error',error=>{console.error(error.code==='EADDRINUSE'?'8788 portu kullanimda. Acik PARA penceresini kapatin.':'Yerel sunucu baslatilamadi.');sim.close();paper.close();accountHistory.close();process.exitCode=1;});
+  const server=createServer({token,simulator:sim,paper,aiProviders:new AIProviderVault({directory:join(dir,'ai-providers')}),account:new AccountService({path:join(dir,'binance-tr.vault')}),accountHistory,orderJournal,autoScan:true,googleAuth});
+  server.on('error',error=>{console.error(error.code==='EADDRINUSE'?'8788 portu kullanimda. Acik PARA penceresini kapatin.':'Yerel sunucu baslatilamadi.');sim.close();paper.close();accountHistory.close();orderJournal.close();process.exitCode=1;});
   server.listen(8788,'127.0.0.1',()=>{
     console.log('\nPARA yerel panel: http://127.0.0.1:8788');
     console.log(googleAuth.configured?'Google ile giris: etkin (yerel tarayicidan).':'Google ile giris: ayarlanmadi; eski yerel anahtar girisi kullanilir.');
@@ -40,5 +42,5 @@ try {
     console.log('Gercek emirler kapali. Durdurmak icin Ctrl+C.\n');
     if(process.platform==='win32'){const browser=spawn('rundll32.exe',['url.dll,FileProtocolHandler','http://127.0.0.1:8788'],{detached:true,stdio:'ignore'});browser.on('error',()=>console.error('Tarayici otomatik acilamadi; yukaridaki adresi elle acin.'));browser.unref();}
   });
-  const stop=()=>server.close(()=>{sim.close();paper.close();accountHistory.close();process.exit(0);});process.on('SIGINT',stop);process.on('SIGTERM',stop);
+  const stop=()=>server.close(()=>{sim.close();paper.close();accountHistory.close();orderJournal.close();process.exit(0);});process.on('SIGINT',stop);process.on('SIGTERM',stop);
 } catch(error){console.error(`Kurulum veya baslatma hatasi: ${error.message}`);process.exitCode=1;}
