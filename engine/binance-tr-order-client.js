@@ -36,6 +36,30 @@ export class BinanceTROrderClient {
       return {symbol,orderId,status:order.status};
     });
   }
+  async trades(symbol,{startTime,endTime,fromId,direct,limit=500}={}){
+    if(typeof symbol!=='string'||!/^[A-Z0-9]{1,20}_[A-Z0-9]{1,20}$/.test(symbol)||
+       !Number.isSafeInteger(limit)||limit<1||limit>500)throw Error('INVALID_TRADE_QUERY');
+    const params={symbol,limit:String(limit)};
+    for(const [name,value] of Object.entries({startTime,endTime,fromId})){
+      if(value!==undefined&&(!Number.isSafeInteger(value)||value<0))throw Error('INVALID_TRADE_QUERY');
+      if(value!==undefined)params[name]=String(value);
+    }
+    if(direct!==undefined){if(!['next','prev'].includes(direct))throw Error('INVALID_TRADE_QUERY');params.direct=direct;}
+    const data=await this.#send('GET','/open/v1/orders/trades',params);
+    if(!Array.isArray(data?.list)||data.list.length>=limit)throw Error('TRADE_HISTORY_INCOMPLETE');
+    const seen=new Set();
+    return data.list.map(fill=>{
+      const tradeId=String(fill?.tradeId),orderId=exchangeOrderId(fill?.orderId);
+      if(!/^[1-9]\d{0,18}$/.test(tradeId)||seen.has(tradeId)||fill.symbol!==symbol||
+         !['string','number'].includes(typeof fill.price)||!['string','number'].includes(typeof fill.qty)||
+         !['string','number'].includes(typeof fill.quoteQty)||!['string','number'].includes(typeof fill.commission)||
+         typeof fill.commissionAsset!=='string'||typeof fill.isBuyer!=='boolean'||!Number.isSafeInteger(Number(fill.time)))
+        throw Error('INVALID_TRADE_HISTORY');
+      seen.add(tradeId);
+      return {tradeId,orderId,symbol,price:String(fill.price),qty:String(fill.qty),quoteQty:String(fill.quoteQty),
+        commission:String(fill.commission),commissionAsset:fill.commissionAsset,isBuyer:fill.isBuyer,time:Number(fill.time)};
+    });
+  }
   placeLimit(order){
     if(!['BUY','SELL'].includes(order.side)||!/^para_[A-Za-z0-9_-]{8,64}$/.test(order.clientId))throw Error('INVALID_ORDER');
     return this.#send('POST','/open/v1/orders',{symbol:order.symbol,side:String(order.side==='BUY'?0:1),type:'1',quantity:order.quantity,price:order.price,timeInForce:'1',clientId:order.clientId});
@@ -47,6 +71,7 @@ export class BinanceTROrderClient {
   cancel(clientId,orderId){
     if(!/^para_[A-Za-z0-9_-]{8,64}$/.test(clientId))throw Error('INVALID_ID');
     if(orderId==null)throw Error('ORDER_ID_REQUIRED');
-    return this.#send('POST','/open/v1/orders/cancel',{orderId:exchangeOrderId(orderId)});
+    return this.cancelByOrderId(orderId);
   }
+  cancelByOrderId(orderId){return this.#send('POST','/open/v1/orders/cancel',{orderId:exchangeOrderId(orderId)});}
 }

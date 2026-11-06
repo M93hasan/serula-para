@@ -1,6 +1,11 @@
 # Binance TR gerçek emir altyapısı — KAPALI
 **Durum:** yalnızca geliştirme/test altyapısı. Mevcut sunucuya, kullanıcı arayüzüne ve otomatik tarayıcıya bağlı değildir. Gerçek emir etkin değildir.
 
+> Güncel karar: NO-GO. `SECURITY_REMEDIATION_2026-11-06.md` ve
+> `WINDOWS_11_VALIDATION_2026-11-06.md` tamamlanmadan gerçek emir açılamaz.
+> Gerçek emirler ayrı ve doğrulanmış bir sürüm gerektirir; para çekme yetkisi
+> kapalı kalmalıdır.
+
 - Binance TR /open/v1/orders POST, /open/v1/orders/detail GET, /open/v1/orders/cancel POST için ayrı, imzalı ve uç nokta kısıtlı adapter.
 - Sadece LIMIT emirleri: tam ondalık doğrulama, güncel borsa sembol filtreleri, miktar/fiyat adımı, minimum notional, kullanılabilir bakiye, fiyat yaşı ve fiyat sapması kontrolü.
 - Her emir için kalıcı ve benzersiz clientId. Binance TR belgeleri clientId benzersizliğini **garanti etmez**; ağ kesintisinde aynı emir asla tekrar POST edilmez.

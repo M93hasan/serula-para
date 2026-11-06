@@ -26,6 +26,32 @@ app.innerHTML=`<div class="shell"><aside class="sidebar"><div class="brand"><div
     </div>
     <div class="command-empty" id="command-empty" hidden>Bu komut bulunamadı.</div>
   </div>
+</div>
+<div class="setup-overlay" id="setup-overlay" hidden>
+  <div class="setup-dialog" role="dialog" aria-modal="true" aria-labelledby="setup-title">
+    <div class="setup-heading"><div><span class="eyebrow">İLK KURULUM</span><h2 id="setup-title">PARA'yı güvenli biçimde bağla</h2></div><span class="status-pill">GERÇEK EMİRLER KAPALI</span></div>
+    <ol class="setup-progress" aria-label="Kurulum adımları">
+      <li data-setup-progress="google"><strong>1</strong><span>Google</span></li>
+      <li data-setup-progress="binance"><strong>2</strong><span>Binance TR</span></li>
+      <li data-setup-progress="ai"><strong>3</strong><span>Yapay zekâ</span></li>
+    </ol>
+    <section class="setup-step" data-setup-step="google" hidden>
+      <h3>Google hesabınla giriş yap</h3><p>Bu bilgisayardaki PARA oturumunu yalnızca izin verilen Google hesabı açabilir.</p>
+      <button id="setup-google-login" class="primary full" type="button">Google ile giriş yap</button>
+      <form id="setup-local-login" hidden><label>Yerel kurtarma anahtarı<input id="setup-local-token" type="password" autocomplete="off" required minlength="32"></label><button class="full" type="submit">Yerel anahtarla devam et</button></form>
+      <p id="setup-google-status" role="status">Google girişi kontrol ediliyor.</p>
+    </section>
+    <section class="setup-step" data-setup-step="binance" hidden>
+      <h3>Binance TR salt okunur API</h3><p>Binance TR'de yalnızca okuma izni olan bir anahtar kullan. Alım satım ve para çekme izinleri kapalı kalmalıdır.</p>
+      <form id="setup-binance-form"><label>API Key<input id="setup-tr-key" type="password" autocomplete="new-password" maxlength="512" required></label><label>API Secret<input id="setup-tr-secret" type="password" autocomplete="new-password" maxlength="512" required></label><label>Kasa parolası<input id="setup-tr-pass" type="password" autocomplete="new-password" minlength="16" maxlength="512" required placeholder="En az 16 karakter"></label><button class="primary full" type="submit">Şifreli kasaya kaydet ve devam et</button></form>
+      <p id="setup-binance-status" role="status">Anahtarlar bu bilgisayardaki şifreli kasaya kaydedilir ve tekrar gösterilmez.</p>
+    </section>
+    <section class="setup-step" data-setup-step="ai" hidden>
+      <h3>Yapay zekâ API sağlayıcısı</h3><p>Bir sağlayıcı bağla. ChatGPT aboneliği, OpenAI API kredisi yerine geçmez.</p>
+      <form id="setup-ai-form"><label>Sağlayıcı<select id="setup-ai-provider"><option value="openai">OpenAI API</option><option value="ollama_cloud">Ollama Cloud</option><option value="anthropic">Claude / Anthropic</option><option value="gemini">Google Gemini</option><option value="deepseek">DeepSeek</option></select></label><label>Model adı<input id="setup-ai-model" type="text" maxlength="100" autocomplete="off" placeholder="İsteğe bağlı sağlayıcı model adı"></label><label>API anahtarı<input id="setup-ai-key" type="password" maxlength="512" autocomplete="new-password" required></label><label>AI kasası parolası<input id="setup-ai-pass" type="password" minlength="16" maxlength="512" autocomplete="new-password" required placeholder="En az 16 karakter"></label><button class="primary full" type="submit">Şifreli kasaya kaydet ve tamamla</button></form>
+      <p id="setup-ai-status" role="status">Anahtar yalnızca yerel şifreli kasada tutulur.</p>
+    </section>
+  </div>
 </div>`;
 const $=s=>document.querySelector(s);let scanPrices=[];
 let token='',pair='BTC_TRY',snapshot=null,balances=null,lastConnect=null,chart=null,candleSeries=null,pnlChart=null,pnlSeries=null,marketRequest=0;
@@ -96,6 +122,28 @@ $('#workspace-toggle').addEventListener('click',()=>{
 document.querySelectorAll('.nav').forEach(x=>x.addEventListener('click',()=>navigate(x.dataset.view)));document.querySelectorAll('[data-goto]').forEach(x=>x.addEventListener('click',()=>navigate(x.dataset.goto)));
 const webMode=location.hostname!=='127.0.0.1'||location.port!=='8788';
 async function api(path,body){if(!token)throw Error('Önce güvenli oturum açın.');let res;try{res=await fetch(path,{method:body?'POST':'GET',headers:{...(!webMode&&token!=='google-session'?{Authorization:`Bearer ${token}`}:{}) ,...(body?{'Content-Type':'application/json','X-Para-Request':'1'}:{})},body:body?JSON.stringify(body):undefined,cache:'no-store'});}catch{throw Error('Yerel motora ulaşılamadı.');}if(!res.ok){const payload=await res.json().catch(()=>({}));const analysisErrors={REGION_RESTRICTED:'Binance TR piyasa verisi bu ağ veya bölgeden erişilemiyor. Kendi bağlantınızda tekrar deneyin.',INVALID_RISK:'Bütçe, işlem limiti, zarar eşiği ve komisyon ayarlarını kontrol edin.',INVALID_SYMBOL:'Seçilen parite desteklenmiyor.',CLOCK_INVALID:'Bilgisayar saatini otomatik eşitleyip tekrar deneyin.',RATE_LIMIT:'Çok sık istek gönderildi. En az 30 saniye bekleyip tekrar deneyin.',STALE_DATA:'Piyasa verisi eski veya eksik; daha sonra tekrar deneyin.',MARKET_UNAVAILABLE:'Bu paritenin Binance TR verisi bulunamadı.',MARKET_CONNECTION:'Binance TR piyasa verisine ulaşılamadı. İnternet bağlantısını kontrol edin.'};if(analysisErrors[payload.error])throw Error(analysisErrors[payload.error]);if(payload.error==='AUTH_REQUIRED')throw Error('Oturum sona erdi. Sayfayı yenileyip tekrar giriş yapın.');if(payload.error==='VAULT_UNLOCK_FAILED')throw Error('Kasa açılamadı. Parolanızı kontrol edin.');if(payload.error==='EXCHANGE_READ_FAILED')throw Error('Binance TR hesabına ulaşılamadı. API okuma iznini, ağ bağlantısını ve bilgisayar saatini kontrol edin.');throw Error(res.status===403?'Erişim reddedildi. Yerel bağlantıyı ve yetkiyi kontrol edin.':res.status===503?'Piyasa verisi alınamadı. Ağ, zaman ayarı veya istek sınırını kontrol edin.':'İşlem başarısız. Kasa parolasını ve API izinlerini kontrol edin.');}return res.json();}
+const setupOverlay=$('#setup-overlay');
+const setupSteps=['google','binance','ai'];
+function showSetupStep(step,message){
+  if(webMode)return;
+  setupOverlay.hidden=false;document.body.classList.add('setup-open');
+  for(const panel of document.querySelectorAll('[data-setup-step]'))panel.hidden=panel.dataset.setupStep!==step;
+  const active=setupSteps.indexOf(step);
+  for(const item of document.querySelectorAll('[data-setup-progress]')){const index=setupSteps.indexOf(item.dataset.setupProgress);item.classList.toggle('active',index===active);item.classList.toggle('complete',index<active);}
+  if(message)text(`#setup-${step}-status`,message);
+  setupOverlay.querySelector(`[data-setup-step="${step}"] input, [data-setup-step="${step}"] button`)?.focus();
+}
+function finishSetup(){setupOverlay.hidden=true;document.body.classList.remove('setup-open');}
+async function syncSetupFlow(binanceConfigured){
+  if(webMode||!token)return;
+  if(!binanceConfigured){showSetupStep('binance');return;}
+  let state;
+  try{state=await api('/api/ai/providers');}
+  catch{showSetupStep('ai','AI sağlayıcı durumu alınamadı. Yerel motoru kontrol edip tekrar deneyin.');return;}
+  providerStates=state.providers;
+  if(!providerStates.some(item=>item.configured)){showSetupStep('ai');return;}
+  finishSetup();
+}
 function setControls(configured){$('#tr-save').disabled=configured;for(const id of ['tr-test','tr-change','tr-delete'])$(`#${id}`).disabled=!configured;}
 function clearKeys(){for(const id of ['tr-key','tr-secret','tr-pass'])$(`#${id}`).value='';}
 function clearBalance(){balances=null;renderPortfolio();}
@@ -109,12 +157,17 @@ async function activateLocalSession(){
      // Populate the public BTC/TRY and ETH/TRY charts without requiring a manual simulation click.
      startChartRefresh();
     if(token==='google-session')$('#google-logout').hidden=false;
+    await syncSetupFlow(s.configured);
   }catch(err){
     token='';setControls(false);$('#tr-save').disabled=true;$('#local-halt').disabled=true;$('#analysis-run').disabled=true;
-    $('#analysis-auto').disabled=true;$('#ai-run').disabled=true;$('#analysis-auto').checked=false;clearBalance();text('#local-status',err.message);
+    $('#analysis-auto').disabled=true;$('#ai-run').disabled=true;$('#analysis-auto').checked=false;clearBalance();text('#local-status',err.message);showSetupStep('google',err.message);
   }
 }
 $('#local-login').addEventListener('submit',async e=>{e.preventDefault();token=$('#local-token').value;$('#local-token').value='';await activateLocalSession();});
+$('#setup-google-login').addEventListener('click',()=>{location.assign('/auth/google/start');});
+$('#setup-local-login').addEventListener('submit',async e=>{e.preventDefault();token=$('#setup-local-token').value;$('#setup-local-token').value='';await activateLocalSession();});
+$('#setup-binance-form').addEventListener('submit',async e=>{e.preventDefault();const form=e.currentTarget,button=form.querySelector('button');button.disabled=true;text('#setup-binance-status','Şifreli kasaya kaydediliyor…');const body={apiKey:$('#setup-tr-key').value,secretKey:$('#setup-tr-secret').value,passphrase:$('#setup-tr-pass').value,replace:false};form.reset();try{await api('/api/binance-tr/save',body);setControls(true);text('#tr-state','Kasa kayıtlı. Bağlantıyı test edin.');await syncSetupFlow(true);}catch(err){text('#setup-binance-status',err.message);}finally{button.disabled=false;}});
+$('#setup-ai-form').addEventListener('submit',async e=>{e.preventDefault();const form=e.currentTarget,button=form.querySelector('button');button.disabled=true;text('#setup-ai-status','Şifreli kasaya kaydediliyor…');const body={provider:$('#setup-ai-provider').value,model:$('#setup-ai-model').value.trim(),apiKey:$('#setup-ai-key').value,passphrase:$('#setup-ai-pass').value,replace:false};form.reset();try{await api('/api/ai/providers/save',body);await loadAIProviders();finishSetup();}catch(err){text('#setup-ai-status',err.message);}finally{button.disabled=false;}});
 const googleBox=document.createElement('div');
 googleBox.innerHTML='<button id="google-login" type="button" class="primary full" hidden>Google ile giriş yap</button><button id="google-logout" type="button" class="full" hidden>Google oturumunu kapat</button><p id="google-login-status" role="status">Google girişi kontrol ediliyor.</p>';
 $('#local-login').before(googleBox);
@@ -124,12 +177,14 @@ $('#google-logout').addEventListener('click',async()=>{
   finally{location.reload();}
 });
 if(!webMode){
+  showSetupStep('google');
   fetch('/auth/google/status',{cache:'no-store'}).then(r=>r.json()).then(async state=>{
-    if(!state.configured){text('#google-login-status','Google girişi bu bilgisayarda henüz yapılandırılmadı. Eski yerel anahtar girişi kullanılabilir.');return;}
+    if(!state.configured){const message='Google girişi bu bilgisayarda henüz yapılandırılmadı. Yerel kurtarma anahtarı kullanılabilir.';text('#google-login-status',message);text('#setup-google-status',message);$('#setup-google-login').hidden=true;$('#setup-local-login').hidden=false;return;}
     $('#google-login').hidden=false;text('#google-login-status','Google oturumu yalnızca bu Windows bilgisayarında geçerlidir. Binance kasası ayrıca korunur.');
     const me=await fetch('/api/auth/me',{cache:'no-store'});
-    if(me.ok){token='google-session';await activateLocalSession();}
-  }).catch(()=>text('#google-login-status','Google oturumu kontrol edilemedi; yerel anahtar girişi kullanılabilir.'));
+    if(me.ok){token='google-session';await activateLocalSession();return;}
+    text('#setup-google-status','Devam etmek için izin verilen Google hesabınla giriş yap.');
+  }).catch(()=>{const message='Google oturumu kontrol edilemedi; yerel kurtarma anahtarı kullanılabilir.';text('#google-login-status',message);text('#setup-google-status',message);$('#setup-google-login').hidden=true;$('#setup-local-login').hidden=false;});
 }
 
 $('#local-halt').addEventListener('click',async()=>{try{await api('/halt',{});text('#local-status','Acil durdurma etkin · gerçek emirler kapalı');}catch(e){text('#local-status',e.message);}});

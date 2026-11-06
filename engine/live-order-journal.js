@@ -13,7 +13,7 @@ export class LiveOrderJournal {
     if(path!==':memory:')mkdirSync(dirname(path),{recursive:true,mode:0o700});
     this.db=new DatabaseSync(path);
     if(path!==':memory:')chmodSync(path,0o600);
-    this.db.exec('PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; CREATE TABLE IF NOT EXISTS live_orders (client_id TEXT PRIMARY KEY, symbol TEXT NOT NULL, intent TEXT NOT NULL, status TEXT NOT NULL, order_id TEXT, filled TEXT NOT NULL DEFAULT \'0\', quote_filled TEXT NOT NULL DEFAULT \'0\', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS live_active_intents (fingerprint TEXT PRIMARY KEY, client_id TEXT NOT NULL UNIQUE);');
+    this.db.exec('PRAGMA busy_timeout=5000; PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; CREATE TABLE IF NOT EXISTS live_orders (client_id TEXT PRIMARY KEY, symbol TEXT NOT NULL, intent TEXT NOT NULL, status TEXT NOT NULL, order_id TEXT, filled TEXT NOT NULL DEFAULT \'0\', quote_filled TEXT NOT NULL DEFAULT \'0\', created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL); CREATE TABLE IF NOT EXISTS live_active_intents (fingerprint TEXT PRIMARY KEY, client_id TEXT NOT NULL UNIQUE); CREATE TABLE IF NOT EXISTS live_reconciliation_runs (id INTEGER PRIMARY KEY, trigger TEXT NOT NULL, status TEXT NOT NULL, started_at INTEGER NOT NULL, completed_at INTEGER NOT NULL, symbol_count INTEGER NOT NULL, exchange_open_count INTEGER NOT NULL, pending_count INTEGER NOT NULL, reason TEXT);');
     // Upgrade an existing development journal without discarding unresolved orders.
     const columns=this.db.prepare('PRAGMA table_info(live_orders)').all().map(c=>c.name);
     if(!columns.includes('created_at')){
@@ -93,6 +93,18 @@ export class LiveOrderJournal {
       if(TERMINAL.has(status))this.db.prepare('DELETE FROM live_active_intents WHERE client_id=?').run(clientId);
       return this.get(clientId);
     });
+  }
+  recordReconciliation(run){
+    if(!run||!['STARTUP','PERIODIC','MANUAL'].includes(run.trigger)||!['CLEAR','HALTED','FAILED'].includes(run.status)||
+       !Number.isSafeInteger(run.startedAt)||!Number.isSafeInteger(run.completedAt)||run.completedAt<run.startedAt||
+       ![run.symbolCount,run.exchangeOpenCount,run.pendingCount].every(x=>Number.isSafeInteger(x)&&x>=0)||
+       run.reason!==undefined&&(typeof run.reason!=='string'||!/^[A-Z_]{2,64}$/.test(run.reason)))throw Error('INVALID_RECONCILIATION_RUN');
+    this.db.prepare('INSERT INTO live_reconciliation_runs(trigger,status,started_at,completed_at,symbol_count,exchange_open_count,pending_count,reason) VALUES(?,?,?,?,?,?,?,?)')
+      .run(run.trigger,run.status,run.startedAt,run.completedAt,run.symbolCount,run.exchangeOpenCount,run.pendingCount,run.reason||null);
+  }
+  reconciliationHistory(limit=50){
+    if(!Number.isSafeInteger(limit)||limit<1||limit>200)throw Error('INVALID_LIMIT');
+    return this.db.prepare('SELECT trigger,status,started_at AS startedAt,completed_at AS completedAt,symbol_count AS symbolCount,exchange_open_count AS exchangeOpenCount,pending_count AS pendingCount,reason FROM live_reconciliation_runs ORDER BY id DESC LIMIT ?').all(limit);
   }
   close(){this.db.close();}
 }
