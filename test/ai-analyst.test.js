@@ -36,5 +36,5 @@ test('compact local prompts preserve all validated candles and bound prior respo
   requests.push(JSON.parse(options.body));return new Response(JSON.stringify({message:{content:JSON.stringify({analysis:'x'.repeat(1000)})}}));
  }});
  const result=await agent.analyze(input);assert.equal(result.action,'BEKLE');assert.equal(result.roles.length,6);assert.equal(requests.length,5);
- for(const request of requests){const prompt=JSON.parse(request.messages[1].content);assert.equal(prompt.facts.candles.length,20);assert.deepEqual(prompt.facts.candleColumns,['time','closeTime','open','high','low','close','volume']);assert.deepEqual(prompt.facts.candles[19],Object.values(input.candles[19]));assert.ok(prompt.previous.every(role=>role.text.length<=300));assert.equal(request.options.num_predict,120);assert.ok(!JSON.stringify(prompt).includes('DO-NOT-SEND'));}
+ for(const request of requests){const prompt=JSON.parse(request.messages[1].content);assert.equal(prompt.facts.candles.length,20);assert.deepEqual(prompt.facts.candleColumns,['time','closeTime','open','high','low','close','volume']);assert.deepEqual(prompt.facts.candles[19],Object.values(input.candles[19]));assert.ok(prompt.previous.every(role=>role.text.length<=300));assert.equal(request.options.num_predict,96);assert.ok(!JSON.stringify(prompt).includes('DO-NOT-SEND'));}
 });
