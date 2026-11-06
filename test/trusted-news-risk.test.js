@@ -11,7 +11,7 @@ test('news validation requires verified publisher, article date and HTTPS origin
  assert.equal(parseTrustedFeed(rss(now-90000000),src,now).length,0);
  assert.equal(parseTrustedFeed(rss(now,'https://attacker.example/news'),src,now).length,0);
  assert.equal(parseTrustedFeed(rss(now,'http://www.coindesk.com/story'),src,now).length,0);
- assert.equal(parseTrustedFeed(rss(),{name:'Made Up',host:'www.coindesk.com'},now).length,0);
+ assert.throws(()=>parseTrustedFeed(rss(),{name:'Made Up',host:'www.coindesk.com'},now),/INVALID_NEWS_FEED/);
 });
 test('two independent fresh publishers required before news can be marked verified',async()=>{
  const feed=new TrustedNews({clock:()=>now,fetchImpl:async url=>({ok:true,text:async()=>rss(now,url.includes('coindesk')?'https://www.coindesk.com/article':'https://cointelegraph.com/article')})});
