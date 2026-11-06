@@ -229,7 +229,7 @@ export function createServer({ token, simulator, paper = null, account = null, a
         const catalog=await universe.discover();
         const approved=catalog.markets.some(m=>m.symbol===input.symbol&&m.type===1);
         if(!approved)throw Error('Unsupported or disabled symbol');
-        const briefing=await trustedNews.latest();const analysisGeneration=haltGeneration;const result=await ai.analyze(snapshot,{catalogApproved:true,news:briefing.verified?briefing:null});if(analysisGeneration!==haltGeneration)return res.writeHead(409).end('{"error":"halted"}');result.startedAt=result.time;result.time=Date.now();simulator.saveAI(result);return res.end(JSON.stringify(result));
+        const briefing=await trustedNews.latest().catch(()=>null);const analysisGeneration=haltGeneration;const result=await ai.analyze(snapshot,{catalogApproved:true,news:briefing?.verified?briefing:null});if(analysisGeneration!==haltGeneration)return res.writeHead(409).end('{"error":"halted"}');result.startedAt=result.time;result.time=Date.now();simulator.saveAI(result);return res.end(JSON.stringify(result));
       }catch{return res.writeHead(503).end('{"error":"ai unavailable"}');}
     }
     if (req.method==='GET' && req.url==='/api/binance-tr/value-history') {
