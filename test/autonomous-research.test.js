@@ -10,7 +10,8 @@ function setup({status='complete',decision={symbol:'BTC_TRY',action:'AL',time:no
  const scanner={status:()=>state};
  const store={status:()=>({halted:false}),halt:()=>events.push('halt'),saveAI:x=>events.push(x)};
  const analyst={analyze:async()=>decision};
- const mode=new AutonomousResearch({scanner,analyst,store,clock:()=>now});
+ const news={latest:async()=>({verified:true,asOf:now,articles:[{publisher:'CoinDesk',title:'Bitcoin volume and risk update',publishedAt:now}]})};
+ const mode=new AutonomousResearch({scanner,analyst,store,news,clock:()=>now});
  return {mode,events};
 }
 test('autonomous research logs BEKLE and does not execute an order',async()=>{
