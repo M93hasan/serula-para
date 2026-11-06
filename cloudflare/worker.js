@@ -1,13 +1,14 @@
 import { startGoogle, finishGoogle, verifyGoogleSession, logoutGoogle } from './google-auth.js';
 import { MarketData } from '../engine/market-data.js';
 import { readBinanceAccount } from './binance-readonly.js';
+import { diagnoseBinanceConnection } from './binance-diagnostic.js';
 import { decide, selectMarket } from '../engine/decision.js';
 import { backtest } from '../engine/backtest.js';
 const headers={'Content-Type':'application/json; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'};
 const json=(data,status=200)=>new Response(JSON.stringify(data),{status,headers});
 const loginPage=`<!doctype html><html lang="tr"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>PARA | Google ile giriş</title><body style="background:#080808;color:#eee;font:16px system-ui;max-width:36rem;margin:12vh auto;padding:24px"><h1>PARA Trading</h1><p>Güvenli erişim için Google hesabınla giriş yap.</p><p><a style="display:inline-block;background:#fff;color:#111;padding:14px 18px;border-radius:8px;text-decoration:none" href="/auth/google/login">Google ile giriş yap</a></p><p>Yalnızca izinli test hesabı erişebilir. API anahtarını veya kasa parolanı buraya girme.</p></body></html>`;
 async function boundedJson(request){const reader=request.body?.getReader();if(!reader)throw Error('INVALID');let chunks=[],size=0;try{while(true){const {done,value}=await reader.read();if(done)break;size+=value.byteLength;if(size>2048){await reader.cancel();throw Error('INVALID');}chunks.push(value);}const data=new Uint8Array(size);let offset=0;for(const chunk of chunks){data.set(chunk,offset);offset+=chunk.length;}return JSON.parse(new TextDecoder().decode(data));}finally{reader.releaseLock();}}
-export function createWorker({ verify=verifyGoogleSession, market=()=>new MarketData(), googleStart=startGoogle, googleFinish=finishGoogle, binanceReader=readBinanceAccount }={}) { return {
+export function createWorker({ verify=verifyGoogleSession, market=()=>new MarketData(), googleStart=startGoogle, googleFinish=finishGoogle, binanceReader=readBinanceAccount, binanceDiagnostic=diagnoseBinanceConnection }={}) { return {
  async fetch(request,env){
   const url=new URL(request.url);
   if(url.pathname==='/api/health')return json({status:'google-auth-required',real_orders_enabled:false});
@@ -20,6 +21,12 @@ export function createWorker({ verify=verifyGoogleSession, market=()=>new Market
   }
   if(url.pathname==='/api/auth/me'&&request.method==='GET')return json({authenticated:true,email:identity.email||null});
   if(url.pathname==='/status'&&request.method==='GET')return json({mode:'web-research',realOrdersEnabled:false,halted:true});
+  if(url.pathname==='/api/binance-tr/diagnostic'){
+    if(request.method!=='GET')return json({error:'METHOD_NOT_ALLOWED'},405);
+    if(!env.ANALYSIS_LIMIT)return json({error:'SERVICE_NOT_CONFIGURED'},503);
+    const rate=await env.ANALYSIS_LIMIT.limit({key:identity.id+':binance-diagnostic'});if(!rate.success)return json({error:'RATE_LIMIT'},429);
+    try{return json(await binanceDiagnostic());}catch{return json({reachable:false,status:'NETWORK_ERROR',httpStatus:null,detail:'FETCH_FAILED',credentialFree:true});}
+  }
   if(url.pathname==='/api/binance-tr/balance'){
     if(request.method!=='POST')return json({error:'METHOD_NOT_ALLOWED'},405);
     if(request.headers.get('Origin')!==url.origin||request.headers.get('Sec-Fetch-Site')!=='same-origin'||request.headers.get('Content-Type')!=='application/json'||request.headers.get('X-Para-Request')!=='1')return json({error:'FORBIDDEN'},403);
