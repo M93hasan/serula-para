@@ -16,7 +16,7 @@ export class MarketData {
     if(response.status===418||response.status===429){const n=Number(response.headers.get('retry-after'));this.#blocked=this.#clock()+(Number.isFinite(n)&&n>0?n*1000:60000);throw Error('Market cooldown');}
     if(!response.ok)throw Error('Market request failed');return normalizeResponse(await response.json());
   }
-  async snapshot({symbol:requestedSymbol}={}){
+  async snapshot({symbol:requestedSymbol,includeBnbPrice=false}={}){
     if(this.#running || this.#clock()<this.#nextSnapshot)throw Error('Market request in progress or cooldown');this.#running=true;this.#nextSnapshot=this.#clock()+30000;
     try {
       const nowResult=await this.#exchange.time();const now=nowResult.timestamp;const reference=this.#clock();
@@ -45,7 +45,18 @@ export class MarketData {
         if(!Number.isFinite(price)||price<=0||!Number.isSafeInteger(time)||time>currentTime()+1000||currentTime()-time>30000)throw Error('Stale price');
         selected.push({symbol,price,priceTime:time,candles});
       }
-      if(!selected.length)throw Error('No eligible TR market');return {asOf:currentTime(),markets:selected};
+      if(!selected.length)throw Error('No eligible TR market');
+      // BNB is valuation-only here. Failure must not hide BTC/ETH charts.
+      if(includeBnbPrice && !selected.some(m=>m.symbol==='BNB_TRY') &&
+        list.some(x=>x.symbol==='BNB_TRY'&&x.type===1&&x.spotTradingEnable===1&&(x.status===undefined||x.status==='TRADING'))){
+        try{
+          const trades=await this.#get('/api/v3/trades',new URLSearchParams({symbol:'BNBTRY',limit:'1'}));
+          const last=trades.at(-1),price=Number(last?.price),priceTime=last?.time;
+          if(Number.isFinite(price)&&price>0&&Number.isSafeInteger(priceTime)&&priceTime<=currentTime()&&currentTime()-priceTime<=30000)
+            selected.push({symbol:'BNB_TRY',price,priceTime,candles:[]});
+        }catch{/* Unknown or stale BNB price stays unavailable; never fabricate a value. */}
+      }
+      return {asOf:currentTime(),markets:selected};
     } finally {this.#running=false;}
   }
 }
