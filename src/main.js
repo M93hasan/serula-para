@@ -27,7 +27,8 @@ app.innerHTML=`<div class="shell"><aside class="sidebar"><div class="brand"><div
   </div>
 </div>`;
 const $=s=>document.querySelector(s);let token='',pair='BTC_TRY',snapshot=null,balances=null,lastConnect=null,chart=null,candleSeries=null,pnlChart=null,pnlSeries=null,marketRequest=0,portfolioPrices=[],portfolioPriceLoading=false;
-let marketReconnectTimer=null,marketFailures=0,overviewLoading=false,marketConnected=false;
+let marketReconnectTimer=null,marketFailures=0,overviewLoading=false,marketConnected=false,portfolioPriceUpdatedAt=null;
+const sendMarketEvent=(type,source,code='UNKNOWN')=>{if(!token)return;api('/api/markets/events',{type,source,code}).catch(()=>{});};
 const text=(sel,value)=>{$(sel).textContent=value};const fmt=n=>new Intl.NumberFormat('tr-TR',{maximumFractionDigits:2}).format(n);const date=t=>new Date(t).toLocaleString('tr-TR');
 function navigate(view){document.querySelectorAll('.view').forEach(x=>x.hidden=x.id!==`view-${view}`);document.querySelectorAll('.nav').forEach(x=>x.classList.toggle('active',x.dataset.view===view));text('#page-title',({overview:'Genel Bakış',markets:'Piyasalar',decisions:'AI Kararları',simulation:'Simülasyon',history:'İşlem Geçmişi',settings:'Ayarlar'})[view]);if(chart)chart.applyOptions({width:$('#market-chart').clientWidth});if(pnlChart)pnlChart.applyOptions({width:$('#pnl-chart').clientWidth});}
 // Terminal workspace controls are UI-only; never persist credentials.
@@ -97,7 +98,7 @@ const webMode=location.hostname!=='127.0.0.1'||location.port!=='8788';
 async function api(path,body){if(!token)throw Error('Önce güvenli oturum açın.');let res;try{res=await fetch(path,{method:body?'POST':'GET',headers:{...(!webMode&&token!=='google-session'?{Authorization:`Bearer ${token}`}:{}) ,...(body?{'Content-Type':'application/json','X-Para-Request':'1'}:{})},body:body?JSON.stringify(body):undefined,cache:'no-store'});}catch{throw Error('Yerel motora ulaşılamadı.');}if(!res.ok){const payload=await res.json().catch(()=>({}));const analysisErrors={REGION_RESTRICTED:'Binance TR piyasa verisi bu ağ veya bölgeden erişilemiyor. Kendi bağlantınızda tekrar deneyin.',INVALID_RISK:'Bütçe, işlem limiti, zarar eşiği ve komisyon ayarlarını kontrol edin.',INVALID_SYMBOL:'Seçilen parite desteklenmiyor.',CLOCK_INVALID:'Bilgisayar saatini otomatik eşitleyip tekrar deneyin.',RATE_LIMIT:'Çok sık istek gönderildi. En az 30 saniye bekleyip tekrar deneyin.',STALE_DATA:'Piyasa verisi eski veya eksik; daha sonra tekrar deneyin.',MARKET_UNAVAILABLE:'Bu paritenin Binance TR verisi bulunamadı.',MARKET_CONNECTION:'Binance TR piyasa verisine ulaşılamadı. İnternet bağlantısını kontrol edin.'};if(analysisErrors[payload.error])throw Error(analysisErrors[payload.error]);if(payload.error==='AUTH_REQUIRED')throw Error('Oturum sona erdi. Sayfayı yenileyip tekrar giriş yapın.');if(payload.error==='VAULT_UNLOCK_FAILED')throw Error('Kasa açılamadı. Parolanızı kontrol edin.');if(payload.error==='EXCHANGE_READ_FAILED')throw Error('Binance TR hesabına ulaşılamadı. API okuma iznini, ağ bağlantısını ve bilgisayar saatini kontrol edin.');throw Error(res.status===403?'Erişim reddedildi. Yerel bağlantıyı ve yetkiyi kontrol edin.':res.status===503?'Piyasa verisi alınamadı. Ağ, zaman ayarı veya istek sınırını kontrol edin.':'İşlem başarısız. Kasa parolasını ve API izinlerini kontrol edin.');}return res.json();}
 function setControls(configured){$('#tr-save').disabled=configured;for(const id of ['tr-test','tr-change','tr-delete'])$(`#${id}`).disabled=!configured;}
 function clearKeys(){for(const id of ['tr-key','tr-secret','tr-pass'])$(`#${id}`).value='';}
-function clearBalance(){balances=null;portfolioPrices=[];renderPortfolio();}
+function clearBalance(){balances=null;portfolioPrices=[];portfolioPriceUpdatedAt=null;renderPortfolio();}
 async function activateLocalSession(){
   try{
     await api('/status');const s=await api('/api/binance-tr/settings');
@@ -163,15 +164,17 @@ async function refreshPortfolioPrices(){
     const result=await api('/api/markets/valuation-prices?assets='+encodeURIComponent(assets.join(',')));
     if(!Array.isArray(result.markets))throw Error('Invalid portfolio prices');
     portfolioPrices=result.markets;
+    portfolioPriceUpdatedAt=Date.now();
     renderPortfolio();
   }catch{
+    sendMarketEvent('PORTFOLIO_REFRESH_FAILED','PORTFOLIO','MARKET_CONNECTION');
     // Keep last verified observations; valuePortfolio excludes quotes older than five minutes.
     renderPortfolio();
   }finally{portfolioPriceLoading=false;}
 }
 function renderPortfolio(){const list=$('#assets-list');list.replaceChildren();text('#portfolio-total','—');text('#portfolio-btc','—');if(!balances){text('#portfolio-label','Toplam portföy');list.textContent='Bağlantı testinden sonra gösterilir.';text('#portfolio-note','Hesap bağlanmadı');return;}
  const nonzero=balances.filter(x=>Number(x.free)>0||Number(x.locked)>0);if(!nonzero.length)list.textContent='Sıfırdan büyük varlık bulunamadı.';for(const b of nonzero){const row=document.createElement('div');row.className='asset';const name=document.createElement('strong');name.textContent=b.asset;const amount=document.createElement('span');amount.textContent=`${b.free} kullanılabilir · ${b.locked} kilitli`;row.append(name,amount);list.append(row);}
- try{const v=valuePortfolio(balances,[...(snapshot?.markets||[]),...portfolioPrices]);if(v.missing.length){text('#portfolio-label','Hesaplanabilen alt toplam');text('#portfolio-total',v.pricedCount?`≈ ₺${fmt(v.subtotal)}`:'—');text('#portfolio-note',`Fiyatı bulunamayan: ${v.missing.join(', ')} · toplam eksik`);return;}text('#portfolio-label','Toplam portföy');text('#portfolio-total',`≈ ₺${fmt(v.subtotal)}`);text('#portfolio-note','Gerçek bakiye · yaklaşık değer');if(v.btc!==null)text('#portfolio-btc',`≈ ${v.btc.toFixed(8)} BTC`);}catch{text('#portfolio-label','Toplam portföy');text('#portfolio-note','Bakiye hesaplanamadı. Bağlantıyı tekrar test edin.');}}
+ try{const v=valuePortfolio(balances,[...(snapshot?.markets||[]),...portfolioPrices]);if(v.missing.length){text('#portfolio-label','Hesaplanabilen alt toplam');text('#portfolio-total',v.pricedCount?`≈ ₺${fmt(v.subtotal)}`:'—');text('#portfolio-note',`Fiyatı bulunamayan: ${v.missing.join(', ')} · toplam eksik`);return;}text('#portfolio-label','Toplam portföy');text('#portfolio-total',`≈ ₺${fmt(v.subtotal)}`);text('#portfolio-note',`Gerçek bakiye · yaklaşık değer · Fiyat güncellemesi: ${portfolioPriceUpdatedAt?date(portfolioPriceUpdatedAt):'bekleniyor'} · Bakiye son okuma: ${lastConnect?date(lastConnect):'bilinmiyor'}`);if(v.btc!==null)text('#portfolio-btc',`≈ ${v.btc.toFixed(8)} BTC`);}catch{text('#portfolio-label','Toplam portföy');text('#portfolio-note','Bakiye hesaplanamadı. Bağlantıyı tekrar test edin.');}}
 
 function createCharts(){const opts={autoSize:true,layout:{background:{color:'#111a27'},textColor:'#8597aa',attributionLogo:true},grid:{vertLines:{color:'#1b2939'},horzLines:{color:'#1b2939'}},timeScale:{timeVisible:true,borderColor:'#263547'},rightPriceScale:{borderColor:'#263547'}};chart=createChart($('#market-chart'),opts);candleSeries=chart.addSeries(CandlestickSeries,{upColor:'#42d8ae',downColor:'#fc7c80',borderVisible:false,wickUpColor:'#42d8ae',wickDownColor:'#fc7c80'});pnlChart=createChart($('#pnl-chart'),opts);pnlSeries=pnlChart.addSeries(AreaSeries,{lineColor:'#5fd8b6',topColor:'rgba(62, 201, 162,.25)',bottomColor:'rgba(62, 201, 162,.01)'});}
 // Public market prices are separate from risk analysis and never trigger orders.
@@ -182,6 +185,7 @@ marketConnectionStatus.setAttribute('role','status');
 $('#chart-subtitle').after(marketConnectionStatus);
 function clearMarketReconnect(){if(marketReconnectTimer!==null)clearTimeout(marketReconnectTimer);marketReconnectTimer=null;marketFailures=0;}
 function reportMarketConnection(connected,message){
+  if(connected!==marketConnected)sendMarketEvent(connected?'CONNECTION_RESTORED':'CONNECTION_LOST','MARKET',connected?'OK':'NETWORK_ERROR');
   marketConnected=connected;
   marketConnectionStatus.textContent=message;
 }
@@ -244,12 +248,14 @@ async function refreshLivePrices({force=false}={}){
 }
 window.addEventListener('offline',()=>{
   if(!token)return;
+  sendMarketEvent('OFFLINE','NETWORK','NETWORK_ERROR');
   if(marketReconnectTimer!==null)clearTimeout(marketReconnectTimer);
   marketReconnectTimer=null;
   reportMarketConnection(false,'Çevrimdışı · internet bağlantısı bekleniyor');
 });
 window.addEventListener('online',()=>{
   if(!token)return;
+  sendMarketEvent('ONLINE','NETWORK','OK');
   clearMarketReconnect();
   reportMarketConnection(false,'İnternet geri geldi · Binance TR yeniden bağlanıyor…');
   if(snapshot?.markets?.length)refreshLivePrices({force:true});
@@ -260,6 +266,7 @@ document.addEventListener('visibilitychange',()=>{
   if(!document.hidden&&token&&!marketReconnectTimer){
     if(snapshot?.markets?.length)refreshLivePrices({force:true});
     else loadMarketOverview();
+    refreshPortfolioPrices().catch(()=>{});
   }
 });
 function renderPair(){document.querySelectorAll('.pair').forEach(x=>x.classList.toggle('active',x.dataset.pair===pair));const market=snapshot?.markets?.find(m=>m.symbol===pair);if(!market)return;$('#chart-empty').hidden=true;candleSeries.setData(market.candles.map(c=>({time:Math.floor(c.time/1000),open:c.open,high:c.high,low:c.low,close:c.close})));chart.timeScale().fitContent();text('#chart-subtitle',`${pair.replace('_',' / ')} · Son işlem ≈ ${fmt(market.price)} ${pair.split('_').at(-1)} · ${date(market.priceTime)}`);}
