@@ -9,7 +9,7 @@ export const DEFAULT_LIVE_RISK_LIMITS=Object.freeze({
  stopLossBps:300,maxQuoteAgeMs:30000,maxRiskStateAgeMs:10000
 });
 const validDecimal=x=>typeof x==='string'&&/^(?:0|[1-9]\d*)(?:\.\d{1,40})?$/.test(x);
-const signedDecimal=x=>typeof x==='string'&&/^-?(?:0|[1-9]\\d*)(?:\\.\\d{1,40})?$/.test(x);
+const signedDecimal=x=>typeof x==='string'&&/^-?(?:0|[1-9]\d*)(?:\.\d{1,40})?$/.test(x);
 function addDecimals(a,b){
  const x=canonicalDecimal(a),y=canonicalDecimal(b),xs=x.split('.')[1]?.length||0,ys=y.split('.')[1]?.length||0,s=Math.max(xs,ys);
  const n=BigInt(x.replace('.',''))*10n**BigInt(s-xs)+BigInt(y.replace('.',''))*10n**BigInt(s-ys);
