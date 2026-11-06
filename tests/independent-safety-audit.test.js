@@ -76,6 +76,6 @@ test('no journal claim capability means emergency containment retains order with
   const result=await service.containHalt();
   assert.equal(result.halted,true);
   assert.equal(result.retained.length,1);
-  assert.equal(reason,'MANUAL_HALT');
+  assert.equal(reason,'CANCEL_OUTCOME_UNKNOWN');
   assert.equal(writes,0);
 });
