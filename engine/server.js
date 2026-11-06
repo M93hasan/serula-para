@@ -52,6 +52,8 @@ export function createServer({ token, simulator, paper = null, account = null, a
     const bearerValid=auth.length===expected.length&&timingSafeEqual(auth,expected);
     const googleSession=localGoogle.user(req.headers.cookie||'');
     if(!bearerValid&&!googleSession) {res.writeHead(403).end('{"error":"forbidden"}');return;}
+    // Identity is derived from the verified session, never from client input.
+    const aiPrincipal=googleSession?'google:'+googleSession.id:'local-desktop';
     if(req.method==='GET'&&req.url==='/api/auth/me')return res.end(JSON.stringify({authenticated:true,provider:googleSession?'google':'local-token'}));
     // Cookie sessions may never bypass the same-origin check on any mutation.
     if(!bearerValid&&googleSession&&req.method!=='GET'&&req.method!=='HEAD'&&
@@ -67,20 +69,24 @@ export function createServer({ token, simulator, paper = null, account = null, a
         const snapshot=latestMarkets.find(m=>m.symbol===input.symbol);if(!snapshot)throw Error('NO_MARKET');
          if(!isFreshMarketPrice(snapshot))return res.writeHead(409).end('{"error":"STALE_DATA"}');
         const catalog=await universe.discover();if(!catalog.markets.some(m=>m.symbol===input.symbol&&m.type===1))throw Error('UNVERIFIED');
-        const result=await cloudAI.analyze({provider:input.provider,passphrase:input.passphrase,snapshot});result.startedAt=result.time;result.time=Date.now();simulator.saveAI(result);return res.end(JSON.stringify(result));
+        const result=await cloudAI.analyze({provider:input.provider,passphrase:input.passphrase,principal:aiPrincipal,snapshot});result.startedAt=result.time;result.time=Date.now();simulator.saveAI(result);return res.end(JSON.stringify(result));
       }catch{return res.writeHead(400).end('{"error":"provider analysis unavailable"}');}
     }
     if(req.method==='GET' && req.url==='/api/ai/providers') {
       if(!aiProviders)return res.writeHead(503).end('{"error":"providers unavailable"}');
-      try{return res.end(JSON.stringify({providers:aiProviders.status()}));}catch{return res.writeHead(503).end('{"error":"providers unavailable"}');}
+      try{return res.end(JSON.stringify({providers:aiProviders.status({principal:aiPrincipal})}));}catch{return res.writeHead(503).end('{"error":"providers unavailable"}');}
     }
-    if(req.method==='POST' && ['/api/ai/providers/save','/api/ai/providers/delete'].includes(req.url)) {
+    if(req.method==='POST' && ['/api/ai/providers/save','/api/ai/providers/delete','/api/ai/providers/migrate'].includes(req.url)) {
       if(req.headers.origin!==origin||req.headers['sec-fetch-site']!=='same-origin'||req.headers['content-type']!=='application/json'||req.headers['x-para-request']!=='1')return res.writeHead(403).end('{"error":"forbidden"}');
       if(!aiProviders)return res.writeHead(503).end('{"error":"providers unavailable"}');
       try{let body='',size=0;for await(const c of req){size+=c.length;if(size>8192)return res.writeHead(413).end('{"error":"too large"}');body+=c.toString('utf8');}
         const input=JSON.parse(body);if(!input||typeof input!=='object'||Array.isArray(input))throw Error('INVALID');
-        const allowed=req.url.endsWith('/save')?['provider','apiKey','model','passphrase','replace']:['provider','passphrase'];if(Object.keys(input).some(x=>!allowed.includes(x)))throw Error('INVALID');
-        if(req.url.endsWith('/save'))aiProviders.save(input);else aiProviders.remove(input);
+        const op=req.url.slice('/api/ai/providers/'.length);
+        const allowed=op==='save'?['provider','apiKey','model','passphrase','replace']:['provider','passphrase'];
+        if(Object.keys(input).some(x=>!allowed.includes(x)))throw Error('INVALID');
+        if(op==='save')aiProviders.save({...input,principal:aiPrincipal});
+        else if(op==='migrate')aiProviders.migrate({...input,principal:aiPrincipal});
+        else aiProviders.remove({...input,principal:aiPrincipal});
         return res.end('{"ok":true}');
       }catch{return res.writeHead(400).end('{"error":"provider operation failed"}');}
     }
