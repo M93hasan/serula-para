@@ -16,6 +16,17 @@ export class MarketData {
     if(response.status===418||response.status===429){const n=Number(response.headers.get('retry-after'));this.#blocked=this.#clock()+(Number.isFinite(n)&&n>0?n*1000:60000);throw Error('Market cooldown');}
     if(!response.ok)throw Error('Market request failed');return normalizeResponse(await response.json());
   }
+  // Lightweight public last-trade refresh; independent of the candle snapshot cooldown.
+  async prices(){
+    const now=this.#clock(),markets=[];
+    for(const symbol of SYMBOLS){
+      const trades=await this.#get('/api/v3/trades',new URLSearchParams({symbol:symbol.replace('_',''),limit:'1'}));
+      const last=trades.at(-1),price=Number(last?.price),priceTime=last?.time;
+      if(!Number.isFinite(price)||price<=0||!Number.isSafeInteger(priceTime)||priceTime>this.#clock()+1000||this.#clock()-priceTime>300000)throw Error('Stale price');
+      markets.push({symbol,price,priceTime});
+    }
+    return {asOf:now,markets};
+  }
   async snapshot({symbol:requestedSymbol}={}){
     if(this.#running || this.#clock()<this.#nextSnapshot)throw Error('Market request in progress or cooldown');this.#running=true;this.#nextSnapshot=this.#clock()+30000;
     try {
