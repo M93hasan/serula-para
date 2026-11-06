@@ -24,7 +24,7 @@ import { createLocalGoogleAuth } from './local-google-auth.js';
 import { scannerPaperMarks } from './paper-marks.js';
 import { isFreshMarketPrice } from './market-freshness.js';
 
-export function createServer({ token, simulator, paper = null, account = null, aiProviders = null, cloudAIService = null, market = new MarketData(), universe = new MarketUniverse(), scanner = new MarketScanner({universe}), ai = new AIAnalyst(), accountHistory = null, autoScan = false, googleAuth = null, distDir = resolve('dist'),riskIntervalMs=5000 }) {
+export function createServer({ token, simulator, paper = null, account = null, aiProviders = null, cloudAIService = null, market = new MarketData(), universe = new MarketUniverse(), scanner = new MarketScanner({universe}), ai = new AIAnalyst(), accountHistory = null, autoScan = false, liveRisk = null, googleAuth = null, distDir = resolve('dist'),riskIntervalMs=5000 }) {
   if (typeof token !== 'string' || Buffer.byteLength(token) < 32) throw new Error('Set a random token of at least 32 bytes');
   const expected = Buffer.from(`Bearer ${token}`);
   const localGoogle=googleAuth||createLocalGoogleAuth();
@@ -58,7 +58,7 @@ export function createServer({ token, simulator, paper = null, account = null, a
       (req.headers.origin!==origin||req.headers['sec-fetch-site']!=='same-origin'||req.headers['content-type']!=='application/json'||req.headers['x-para-request']!=='1')){
       return res.writeHead(403).end('{"error":"forbidden"}');
     }
-    if(req.method==='GET' && req.url==='/status') return res.end(JSON.stringify(simulator.status()));
+    if(req.method==='GET' && req.url==='/status') return res.end(JSON.stringify({...simulator.status(),...(liveRisk?{liveRisk:liveRisk.status()}:{})}));
     if(req.method==='POST' && req.url==='/api/ai/providers/analyze') {
       if(req.headers.origin!==origin||req.headers['sec-fetch-site']!=='same-origin'||req.headers['content-type']!=='application/json'||req.headers['x-para-request']!=='1')return res.writeHead(403).end('{"error":"forbidden"}');
       if(!cloudAI)return res.writeHead(503).end('{"error":"provider unavailable"}');
@@ -133,7 +133,7 @@ export function createServer({ token, simulator, paper = null, account = null, a
       if(req.headers.origin!==origin||req.headers['sec-fetch-site']!=='same-origin'||req.headers['content-type']!=='application/json'||req.headers['x-para-request']!=='1')return res.writeHead(403).end('{"error":"forbidden"}');
       try{const state=scanner.status(),catalog=await universe.discover();const candidate=state.results.filter(x=>x.status==='candidate'&&Date.now()-x.asOf<300000&&catalog.markets.some(m=>m.symbol===x.symbol&&m.type===1)).sort((a,b)=>a.indicators.estimatedRoundTripCost-b.indicators.estimatedRoundTripCost)[0];if(!candidate)return res.writeHead(409).end('{"error":"no fresh candidate"}');const result=await ai.analyze(candidate,{catalogApproved:true});result.startedAt=result.time;result.time=Date.now();simulator.saveAI(result);latestScanDecision={decision:result,candidate};return res.end(JSON.stringify(result));}catch{return res.writeHead(503).end('{"error":"ai unavailable"}');}
     }
-    if(req.method==='POST' && req.url==='/halt') {try {if(paper)paper.halt();simulator.halt();return res.end(JSON.stringify(simulator.status()));} catch {res.writeHead(503).end('{"error":"storage unavailable"}');return;}}
+    if(req.method==='POST' && req.url==='/halt') {try {if(liveRisk)liveRisk.halt('MANUAL_HALT');if(paper)paper.halt();simulator.halt();return res.end(JSON.stringify({...simulator.status(),...(liveRisk?{liveRisk:liveRisk.status()}:{})}));} catch {res.writeHead(503).end('{"error":"storage unavailable"}');return;}}
     if (req.method==='POST' && req.url==='/api/analysis') {
       if(req.headers.origin!==origin || req.headers['sec-fetch-site']!=='same-origin' || req.headers['content-type']!=='application/json' || req.headers['x-para-request']!=='1') {res.writeHead(403).end('{"error":"forbidden"}');return;}
       try {
@@ -203,7 +203,7 @@ export function createServer({ token, simulator, paper = null, account = null, a
     res.writeHead(404).end('{"error":"not found"}');
   });
   if(paper){let monitoring=false;const timer=setInterval(async()=>{if(monitoring)return;monitoring=true;try{if(!paper.status().positions.length)return;let marks=[];try{marks=await scannerPaperMarks({paper,scanner,universe});}catch{}paper.assess(marks);}catch{try{paper.halt();}catch{}}finally{monitoring=false;}},riskIntervalMs);timer.unref();server.on('close',()=>clearInterval(timer));}
-  server.on('close',()=>{scanAutomation.close();localGoogle.close();});
+  server.on('close',()=>{liveRisk?.close?.();scanAutomation.close();localGoogle.close();});
   if(autoScan)server.once('listening',()=>{try{scanAutomation.setEnabled(true);}catch{/* fail closed */}});
   return server;
 }
