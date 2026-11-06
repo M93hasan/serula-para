@@ -1,6 +1,7 @@
 import './style.css';
 import { createChart, CandlestickSeries, AreaSeries } from 'lightweight-charts';
 import { valuePortfolio } from './portfolio.js';
+import { reconnectDelay } from './market-reconnect.js';
 const app=document.querySelector('#app');
 app.innerHTML=`<div class="shell"><aside class="sidebar"><div class="brand"><div class="brandmark">P</div><div><strong>PARA</strong><small>TRADING TERMINAL</small></div></div><div class="navlabel">ÇALIŞMA ALANI</div><nav aria-label="Ana menü"><button class="nav active" data-view="overview"><span>◫</span> Genel Bakış</button><button class="nav" data-view="markets"><span>⌁</span> Piyasalar</button><button class="nav" data-view="decisions"><span>✳</span> AI Kararları</button><button class="nav" data-view="simulation"><span>◉</span> Simülasyon</button><button class="nav" data-view="history"><span>≡</span> İşlem Geçmişi</button><button class="nav" data-view="settings"><span>⚙</span> Ayarlar</button></nav><div class="aside-foot"><span class="dot amber"></span><div><strong>Güvenli mod</strong><small>Gerçek emirler kapalı</small></div></div></aside><main class="main"><header class="topbar"><div><span class="eyebrow">KİŞİSEL TRADING ALANI</span><h1 id="page-title">Genel Bakış</h1></div><div class="top-actions"><button id="command-launch" class="command-launch" type="button" aria-haspopup="dialog" aria-controls="command-overlay" title="Komut menüsü (Ctrl+K)">⌕ Komut <kbd>Ctrl K</kbd></button><span class="status-pill"><i class="dot amber"></i> YEREL MOD</span><button data-goto="settings">⚙ Bağlan</button><button id="local-halt" class="danger" disabled>■ <span>Acil durdur</span></button></div></header>
 <div class="terminal-ticker" role="status" aria-label="Terminal durum çubuğu"><span class="terminal-tag">● PARA / TERM</span><span class="terminal-separator">│</span><span>PAZAR <strong>BINANCE TR</strong></span><span class="terminal-separator">│</span><span>VERİ <strong>BAĞLANTI GEREKLİ</strong></span><span class="terminal-separator">│</span><span>EMİR <strong>DEVRE DIŞI</strong></span><button id="workspace-toggle" class="workbench-control" type="button" aria-pressed="false">⛶ Grafik odak</button></div>
@@ -26,6 +27,7 @@ app.innerHTML=`<div class="shell"><aside class="sidebar"><div class="brand"><div
   </div>
 </div>`;
 const $=s=>document.querySelector(s);let token='',pair='BTC_TRY',snapshot=null,balances=null,lastConnect=null,chart=null,candleSeries=null,pnlChart=null,pnlSeries=null,marketRequest=0;
+let marketReconnectTimer=null,marketFailures=0,overviewLoading=false,marketConnected=false;
 const text=(sel,value)=>{$(sel).textContent=value};const fmt=n=>new Intl.NumberFormat('tr-TR',{maximumFractionDigits:2}).format(n);const date=t=>new Date(t).toLocaleString('tr-TR');
 function navigate(view){document.querySelectorAll('.view').forEach(x=>x.hidden=x.id!==`view-${view}`);document.querySelectorAll('.nav').forEach(x=>x.classList.toggle('active',x.dataset.view===view));text('#page-title',({overview:'Genel Bakış',markets:'Piyasalar',decisions:'AI Kararları',simulation:'Simülasyon',history:'İşlem Geçmişi',settings:'Ayarlar'})[view]);if(chart)chart.applyOptions({width:$('#market-chart').clientWidth});if(pnlChart)pnlChart.applyOptions({width:$('#pnl-chart').clientWidth});}
 // Terminal workspace controls are UI-only; never persist credentials.
@@ -106,7 +108,7 @@ async function activateLocalSession(){
     if(token==='google-session')$('#google-logout').hidden=false;
     loadMarketOverview().catch(()=>{});
   }catch(err){
-    token='';setControls(false);$('#tr-save').disabled=true;$('#local-halt').disabled=true;$('#analysis-run').disabled=true;
+    token='';clearMarketReconnect();setControls(false);$('#tr-save').disabled=true;$('#local-halt').disabled=true;$('#analysis-run').disabled=true;
     $('#analysis-auto').disabled=true;$('#ai-run').disabled=true;$('#analysis-auto').checked=false;clearBalance();text('#local-status',err.message);
   }
 }
@@ -159,7 +161,35 @@ function renderPortfolio(){const list=$('#assets-list');list.replaceChildren();t
 
 function createCharts(){const opts={autoSize:true,layout:{background:{color:'#111a27'},textColor:'#8597aa',attributionLogo:true},grid:{vertLines:{color:'#1b2939'},horzLines:{color:'#1b2939'}},timeScale:{timeVisible:true,borderColor:'#263547'},rightPriceScale:{borderColor:'#263547'}};chart=createChart($('#market-chart'),opts);candleSeries=chart.addSeries(CandlestickSeries,{upColor:'#42d8ae',downColor:'#fc7c80',borderVisible:false,wickUpColor:'#42d8ae',wickDownColor:'#fc7c80'});pnlChart=createChart($('#pnl-chart'),opts);pnlSeries=pnlChart.addSeries(AreaSeries,{lineColor:'#5fd8b6',topColor:'rgba(62, 201, 162,.25)',bottomColor:'rgba(62, 201, 162,.01)'});}
 // Public market prices are separate from risk analysis and never trigger orders.
+// Public market requests never use API credentials and never trigger orders.
+const marketConnectionStatus=document.createElement('p');
+marketConnectionStatus.id='market-connection-status';
+marketConnectionStatus.setAttribute('role','status');
+$('#chart-subtitle').after(marketConnectionStatus);
+function clearMarketReconnect(){if(marketReconnectTimer!==null)clearTimeout(marketReconnectTimer);marketReconnectTimer=null;marketFailures=0;}
+function reportMarketConnection(connected,message){
+  marketConnected=connected;
+  marketConnectionStatus.textContent=message;
+}
+function scheduleMarketReconnect(){
+  if(!token||marketReconnectTimer!==null)return;
+  if(!navigator.onLine){reportMarketConnection(false,'Çevrimdışı · internet bağlantısı bekleniyor');return;}
+  const delay=reconnectDelay(++marketFailures);
+  reportMarketConnection(false,`Bağlantı kesildi · ${Math.round(delay/1000)} saniye sonra tekrar denenecek (deneme ${marketFailures})`);
+  marketReconnectTimer=setTimeout(()=>{
+    marketReconnectTimer=null;
+    if(!token)return;
+    if(snapshot?.markets?.length)refreshLivePrices({force:true});
+    else loadMarketOverview();
+  },delay);
+}
+function marketRequestSucceeded(){
+  clearMarketReconnect();
+  reportMarketConnection(true,'Binance TR · bağlantı aktif · son fiyatlar otomatik yenileniyor');
+}
 async function loadMarketOverview(){
+  if(!token||overviewLoading||marketReconnectTimer!==null)return;
+  overviewLoading=true;
   text('#chart-subtitle','Binance TR piyasa verileri alınıyor…');
   try{
     const data=await api('/api/markets/overview');
@@ -167,34 +197,60 @@ async function loadMarketOverview(){
     snapshot={...snapshot,markets:data.markets};
     renderPair();renderMarkets();renderPortfolio();
     text('#analysis-status','Piyasa grafikleri yüklendi; geçmiş test ayrıca başlatılabilir.');
+    marketRequestSucceeded();
   }catch(err){
     $('#chart-empty').hidden=!snapshot?.markets?.some(m=>m.symbol===pair);
     if(!snapshot?.markets?.length)text('#chart-empty',err.message);
     text('#chart-subtitle','Piyasa verileri yüklenemedi · '+err.message);
-  }
+    scheduleMarketReconnect();
+  }finally{overviewLoading=false;}
 }
 let pricesLoading=false;
-async function refreshLivePrices(){
-  if(!token||pricesLoading||!snapshot?.markets?.length||document.hidden)return;
+async function refreshLivePrices({force=false}={}){
+  if(!token||pricesLoading||overviewLoading||!snapshot?.markets?.length||marketReconnectTimer!==null||(!force&&document.hidden))return;
   pricesLoading=true;
   try{
     const data=await api('/api/markets/prices');
+    let accepted=0;
     for(const update of data.markets||[]){
       const market=snapshot.markets.find(m=>m.symbol===update.symbol);
-      if(!market||!Number.isFinite(update.price)||update.price<=0||!Number.isSafeInteger(update.priceTime)||Date.now()-update.priceTime>300000)continue;
+      if(!market||!Number.isFinite(update.price)||update.price<=0||!Number.isSafeInteger(update.priceTime)||Date.now()-update.priceTime>300000||update.priceTime>Date.now()+1000)continue;
+      accepted++;
       if(update.priceTime>=market.priceTime){market.price=update.price;market.priceTime=update.priceTime;}
     }
+    if(!accepted)throw Error('Güncel fiyat alınamadı.');
     renderPair();renderMarkets();renderPortfolio();
+    marketRequestSucceeded();
   }catch(err){
     text('#chart-subtitle','Fiyat yenileme başarısız · '+err.message+' · Son doğrulanmış veriler gösteriliyor.');
+    scheduleMarketReconnect();
   }finally{pricesLoading=false;}
 }
+window.addEventListener('offline',()=>{
+  if(!token)return;
+  if(marketReconnectTimer!==null)clearTimeout(marketReconnectTimer);
+  marketReconnectTimer=null;
+  reportMarketConnection(false,'Çevrimdışı · internet bağlantısı bekleniyor');
+});
+window.addEventListener('online',()=>{
+  if(!token)return;
+  clearMarketReconnect();
+  reportMarketConnection(false,'İnternet geri geldi · Binance TR yeniden bağlanıyor…');
+  if(snapshot?.markets?.length)refreshLivePrices({force:true});
+  else loadMarketOverview();
+});
+document.addEventListener('visibilitychange',()=>{
+  if(!document.hidden&&token&&!marketReconnectTimer){
+    if(snapshot?.markets?.length)refreshLivePrices({force:true});
+    else loadMarketOverview();
+  }
+});
 function renderPair(){document.querySelectorAll('.pair').forEach(x=>x.classList.toggle('active',x.dataset.pair===pair));const market=snapshot?.markets?.find(m=>m.symbol===pair);if(!market)return;$('#chart-empty').hidden=true;candleSeries.setData(market.candles.map(c=>({time:Math.floor(c.time/1000),open:c.open,high:c.high,low:c.low,close:c.close})));chart.timeScale().fitContent();text('#chart-subtitle',`${pair.replace('_',' / ')} · Son işlem ≈ ${fmt(market.price)} ${pair.split('_').at(-1)} · ${date(market.priceTime)}`);}
 function switchPair(next){if(next===pair)return;pair=next;const custom=$('#active-catalog-pair');custom.hidden=['BTC_TRY','ETH_TRY'].includes(next);custom.dataset.pair=next;custom.textContent=next.replace('_','/');marketRequest++;if(!snapshot?.markets?.some(m=>m.symbol===pair)){candleSeries.setData([]);$('#chart-empty').hidden=false;text('#chart-subtitle','Bu parite için veri yok.');}renderPair();text('#decision-action','Yeni parite için analiz gerekli');text('#overview-signal','—');text('#overview-reason','Yeni parite için analiz gerekli');text('#decision-score','—');text('#analysis-backtest','Yeni parite için geçmiş testi çalıştırın.');text('#overview-pnl','—');$('#pnl-empty').hidden=false;pnlSeries.setData([]);$('#trade-rows').innerHTML='<tr><td colspan="5" class="empty">Yeni parite için analiz gerekli.</td></tr>';}
 document.querySelectorAll('.pair').forEach(x=>x.addEventListener('click',()=>switchPair(x.dataset.pair)));
 function renderMarkets(){const rows=$('#market-rows');rows.replaceChildren();for(const m of snapshot.markets){const tr=document.createElement('tr');for(const value of [m.symbol.replace('_',' / '),`${fmt(m.price)} ${m.symbol.split('_').at(-1)}`,date(m.priceTime)]){const td=document.createElement('td');td.textContent=value;tr.append(td);}const td=document.createElement('td'),button=document.createElement('button');button.textContent='Grafiği aç';button.addEventListener('click',()=>{switchPair(m.symbol);navigate('overview');});td.append(button);tr.append(td);rows.append(tr);}}
 async function runAnalysis(){const selected=pair,id=++marketRequest;const quote=selected.split('_').at(-1);$('#analysis-run').disabled=true;text('#analysis-status','Piyasa verileri alınıyor…');try{const config={symbol:selected,budget:Number($('#sim-budget').value),maxTrade:Number($('#sim-trade').value),maxLoss:Number($('#sim-loss').value),feeRate:Number($('#sim-fee').value)/100};const r=await api('/api/analysis',config);if(id!==marketRequest||selected!==pair)return;snapshot=r;renderPair();renderMarkets();renderPortfolio();const d=r.decision,b=r.backtest;text('#decision-action',`${d.symbol.replace('_',' / ')} · ${d.action}`);text('#decision-reason',d.reason);text('#decision-score',`${d.score}/100`);text('#decision-time',date(d.time));text('#auto-action',`${r.automaticDecision.symbol.replace('_',' / ')} · ${r.automaticDecision.action}`);text('#overview-signal',d.action);text('#overview-reason',`${pair.replace('_',' / ')} · gösterge gücü ${d.score}/100`);text('#overview-pnl',`${b.profitLoss>=0?'+':''}${fmt(b.profitLoss)} ${quote}`);text('#analysis-status',`Son güncelleme: ${date(r.priceTime)}`);text('#analysis-backtest',`${r.symbol.replace('_',' / ')} · ${r.candleCount} saat · Başlangıç ${fmt(b.budget)} ${quote} · Sonuç ${fmt(b.equity)} ${quote} · Komisyon ${fmt(b.fees)} ${quote} · ${b.trades.length} işlem`);$('#pnl-empty').hidden=true;pnlSeries.setData(b.curve.map(c=>({time:Math.floor(c.time/1000),value:c.value})));pnlChart.timeScale().fitContent();const rows=$('#trade-rows');rows.replaceChildren();if(!b.trades.length){rows.innerHTML='<tr><td colspan="5" class="empty">Bu dönemde işlem oluşmadı.</td></tr>';}for(const t of b.trades){const tr=document.createElement('tr');for(const v of [date(t.time),t.action,`${fmt(t.price)} ${quote}`,`${fmt(t.notional)} ${quote}`,`${fmt(t.fee)} ${quote}`]){const td=document.createElement('td');td.textContent=v;tr.append(td);}rows.append(tr);}}catch(e){text('#analysis-status',e.message);}finally{$('#analysis-run').disabled=!token;}}
-$('#analysis-run').addEventListener('click',runAnalysis);setInterval(()=>{if(token&&$('#analysis-auto').checked&&!$('#analysis-run').disabled)runAnalysis();},300000);setInterval(()=>{if(balances)renderPortfolio();},30000);setInterval(refreshLivePrices,30000);setInterval(()=>{if(token&&!snapshot?.markets?.length)loadMarketOverview().catch(()=>{});},60000);createCharts();
+$('#analysis-run').addEventListener('click',runAnalysis);setInterval(()=>{if(token&&$('#analysis-auto').checked&&!$('#analysis-run').disabled)runAnalysis();},300000);setInterval(()=>{if(balances)renderPortfolio();},30000);setInterval(refreshLivePrices,30000);setInterval(()=>{if(token&&!snapshot?.markets?.length&&!overviewLoading&&!marketReconnectTimer)loadMarketOverview().catch(()=>{});},60000);createCharts();
 
 // AI and deterministic SMA results are deliberately separate.
 const providerPanel=document.createElement('article');
