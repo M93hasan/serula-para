@@ -1,4 +1,5 @@
 import { decide } from './decision.js';
+import { isFreshMarketPrice } from './market-freshness.js';
 const HOUR=3600000;
 const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const ema=(values,period)=>values.slice(1).reduce((acc,n)=>acc+(n-acc)*2/(period+1),values[0]);
@@ -25,7 +26,8 @@ export function analyzeMarket(candles,book,now=Date.now()) {
   const gain=delta.reduce((a,n)=>a+Math.max(n,0),0)/14,loss=delta.reduce((a,n)=>a+Math.max(-n,0),0)/14;
   const returns=closes.slice(-21).slice(1).map((n,i)=>n/closes[closes.length-21+i]-1),mean=returns.reduce((a,b)=>a+b,0)/returns.length;
   const spread=(ask-bid)/((ask+bid)/2),volume24=candles.slice(-24).reduce((a,c)=>a+c.quoteVolume,0),volatility=Math.sqrt(returns.reduce((a,n)=>a+(n-mean)**2,0)/returns.length);
-  return {rsi:loss===0?(gain===0?50:100):100-100/(1+gain/loss),ema12:ema(closes,12),ema26:ema(closes,26),macd:ema(closes,12)-ema(closes,26),volatility,spread,volume24,topDepthQuote:Math.min(bid*bidQty,ask*askQty),depthQuote,bid,ask,feeAssumption:0.001,slippageAssumption:0.001,estimatedRoundTripCost:2*(0.001+0.001)+spread};
+  const maxHourlyMove=Math.max(...returns.map(Math.abs));
+  return {maxHourlyMove,rsi:loss===0?(gain===0?50:100):100-100/(1+gain/loss),ema12:ema(closes,12),ema26:ema(closes,26),macd:ema(closes,12)-ema(closes,26),volatility,spread,volume24,topDepthQuote:Math.min(bid*bidQty,ask*askQty),depthQuote,bid,ask,feeAssumption:0.001,slippageAssumption:0.001,estimatedRoundTripCost:2*(0.001+0.001)+spread};
 }
 
 // One GET at a time; this component has no account or trading methods.
@@ -53,12 +55,20 @@ export class MarketScanner {
         if(!Array.isArray(rows)||!Array.isArray(trades))throw Error('invalid response');
         const candles=rows.map(r=>{if(!Array.isArray(r)||r.length<8)throw Error('invalid response');return {time:r[0],open:Number(r[1]),high:Number(r[2]),low:Number(r[3]),close:Number(r[4]),volume:Number(r[5]),closeTime:r[6],quoteVolume:Number(r[7])};}).filter(c=>c.closeTime<now);
         const last=trades.at(-1),price=Number(last?.price),priceTime=last?.time;
-        if(!Number.isFinite(price)||price<=0||!Number.isSafeInteger(priceTime)||priceTime>now+1000||now-priceTime>30000)throw Error('stale price');
+        if(!isFreshMarketPrice({price,priceTime},now))throw Error('stale price');
         const indicators=analyzeMarket(candles,book,now);
         // Quote units differ; no cross-quote liquidity or profit ranking is invented.
-        const eligible=indicators.volume24>0&&indicators.topDepthQuote>0&&indicators.spread<=0.01;
+        const lastClose=candles.at(-1).close;
+        const latestHourlyMove=Math.abs(lastClose/candles.at(-2).close-1);
+        const liveMove=Math.abs(price/lastClose-1);
+        const movementSafe=latestHourlyMove<=0.05&&liveMove<=0.05&&
+          indicators.maxHourlyMove<=0.09&&indicators.volatility<=0.04;
+        const eligible=movementSafe&&indicators.volume24>0&&indicators.topDepthQuote>0&&indicators.spread<=0.01;
+        const reason=!movementSafe?'Ani fiyat hareketi veya oynaklık risk filtresini aştı.':eligible
+          ?'Kural tabanlı araştırma sinyali; AI ve risk onayı gerekli.'
+          :'Hacim, derinlik veya makas yetersiz.';
         const signal=eligible?decide(m.symbol,candles):null;
-        this.#state.results.push({symbol:m.symbol,baseAsset:m.baseAsset,quoteAsset:m.quoteAsset,status:eligible?'candidate':'excluded',researchSignal:signal?.action??'BEKLE',signalReason:signal?.reason??'Piyasa ön filtreleri sağlanmadı.',signalScore:signal?.score??0,reason:eligible?'Kural tabanlı araştırma sinyali; AI ve risk onayı gerekli.':'Hacim, derinlik veya makas yetersiz.',price,priceTime,asOf:now,indicators,candles});
+        this.#state.results.push({symbol:m.symbol,baseAsset:m.baseAsset,quoteAsset:m.quoteAsset,status:eligible?'candidate':'excluded',researchSignal:signal?.action??'BEKLE',signalReason:signal?.reason??'Piyasa ön filtreleri sağlanmadı.',signalScore:signal?.score??0,reason,price,priceTime,asOf:now,indicators:{...indicators,liveMove,latestHourlyMove},candles});
       }catch(e){if(generation!==this.#generation)return;if(['RATE_LIMIT','REGION_RESTRICTED'].includes(e.message)){this.#state.status=e.message;this.#state.finishedAt=this.#clock();return;}this.#state.results.push({symbol:m.symbol,status:'unavailable',researchSignal:'BEKLE',reason:'Güncel veya geçerli veri yok.'});}
     }
     this.#state.status='complete';this.#state.finishedAt=this.#clock();
