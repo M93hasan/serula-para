@@ -64,7 +64,7 @@ export function createServer({ token, simulator, paper = null, account = null, a
     const googleSession=sessions.user(req.headers.cookie||'')||localGoogle.user(req.headers.cookie||'');
     if(!bearerValid&&!googleSession) {res.writeHead(403).end('{"error":"forbidden"}');return;}
     // Identity is derived from the verified session, never from client input.
-    const aiPrincipal=googleSession?googleSession.provider+':'+googleSession.id:'local-desktop';
+    const aiPrincipal=googleSession?(googleSession.provider==='email'?'email:':'google:')+googleSession.id:'local-desktop';
     if(req.method==='GET'&&req.url==='/api/auth/me')return res.end(JSON.stringify({authenticated:true,provider:googleSession?(googleSession.provider||'google'):'local-token'}));
     // Cookie sessions may never bypass the same-origin check on any mutation.
     if(!bearerValid&&googleSession&&req.method!=='GET'&&req.method!=='HEAD'&&
