@@ -62,6 +62,26 @@ export function createServer({ token, simulator, paper = null, account = null, a
       return res.writeHead(403).end('{"error":"forbidden"}');
     }
     if(req.method==='GET' && req.url==='/status') return res.end(JSON.stringify(simulator.status()));
+    if(req.method==='POST'&&req.url==='/api/ai/providers/verify'){
+      if(req.headers.origin!==origin||req.headers['sec-fetch-site']!=='same-origin'||
+        req.headers['content-type']!=='application/json'||req.headers['x-para-request']!=='1')
+        return res.writeHead(403).end('{"error":"forbidden"}');
+      if(!cloudAI||!aiProviders)return res.writeHead(503).end('{"error":"provider unavailable"}');
+      let body='',size=0;
+      try{
+        for await(const chunk of req){
+          size+=chunk.length;
+          if(size>512)return res.writeHead(413).end('{"error":"too large"}');
+          body+=chunk.toString('utf8');
+        }
+        const input=JSON.parse(body);
+        if(!input||Array.isArray(input)||typeof input!=='object'||
+          Object.keys(input).length!==1||!['openai','gemini'].includes(input.provider))
+          throw Error('INVALID');
+        const outcome=await cloudAI.verifyConnection({provider:input.provider,principal:aiPrincipal});
+        return res.end(JSON.stringify(outcome));
+      }catch{return res.writeHead(400).end('{"error":"provider verification unavailable"}');}
+    }
     if(req.method==='POST' && req.url==='/api/ai/providers/analyze') {
       if(req.headers.origin!==origin||req.headers['sec-fetch-site']!=='same-origin'||req.headers['content-type']!=='application/json'||req.headers['x-para-request']!=='1')return res.writeHead(403).end('{"error":"forbidden"}');
       if(!cloudAI)return res.writeHead(503).end('{"error":"provider unavailable"}');
