@@ -2,7 +2,7 @@ import {DatabaseSync} from 'node:sqlite';
 import {createHash} from 'node:crypto';
 import {mkdirSync,chmodSync} from 'node:fs';
 import {dirname} from 'node:path';
-import {compareDecimal} from './order-rules.js';
+import {compareDecimal,canonicalDecimal} from './order-rules.js';
 
 const STATUSES=new Map([[-2,'PROCESSING'],[0,'NEW'],[1,'PARTIALLY_FILLED'],[2,'FILLED'],[3,'CANCELED'],[4,'PENDING_CANCEL'],[5,'REJECTED'],[6,'EXPIRED']]);
 const TERMINAL=new Set(['FILLED','CANCELED','REJECTED','EXPIRED']);
@@ -20,7 +20,7 @@ export class LiveOrderJournal {
       if(this.db.prepare('SELECT 1 FROM live_orders WHERE client_id=?').get(order.clientId))throw Error('DUPLICATE_CLIENT_ID');
       // The exchange does not enforce clientId uniqueness. Persist both id and
       // semantic active-intent fingerprint before any network send.
-      const fingerprint=createHash('sha256').update(JSON.stringify([order.symbol,order.side,order.quantity,order.price])).digest('hex');
+      const fingerprint=createHash('sha256').update(JSON.stringify([order.symbol,order.side,canonicalDecimal(order.quantity),canonicalDecimal(order.price)])).digest('hex');
       if(this.db.prepare('SELECT 1 FROM live_active_intents WHERE fingerprint=?').get(fingerprint))throw Error('DUPLICATE_ACTIVE_ORDER');
       this.db.prepare("INSERT INTO live_orders(client_id,symbol,intent,status,updated_at) VALUES(?, ?, ?, 'RESERVED', ?)").run(order.clientId,order.symbol,JSON.stringify(order),now);
       this.db.prepare('INSERT INTO live_active_intents(fingerprint,client_id) VALUES(?,?)').run(fingerprint,order.clientId);
