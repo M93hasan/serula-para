@@ -1,6 +1,6 @@
 // Autonomous trading policy evaluation. No exchange request or credential access.
 // Live execution remains disabled until separately reviewed and explicitly configured.
-const DECIMAL = /^(?:0|[1-9]\\d*)(?:\\.\\d{1,8})?$/;
+const DECIMAL = /^(?:0|[1-9]\d*)(?:\.\d{1,8})?$/;
 const SYMBOL = /^[A-Z0-9]{2,20}_TRY$/;
 
 function parseAmount(value) {
