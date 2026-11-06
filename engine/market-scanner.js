@@ -53,7 +53,7 @@ export class MarketScanner {
         if(!Array.isArray(rows)||!Array.isArray(trades))throw Error('invalid response');
         const candles=rows.map(r=>{if(!Array.isArray(r)||r.length<8)throw Error('invalid response');return {time:r[0],open:Number(r[1]),high:Number(r[2]),low:Number(r[3]),close:Number(r[4]),volume:Number(r[5]),closeTime:r[6],quoteVolume:Number(r[7])};}).filter(c=>c.closeTime<now);
         const last=trades.at(-1),price=Number(last?.price),priceTime=last?.time;
-        if(!Number.isFinite(price)||price<=0||!Number.isSafeInteger(priceTime)||priceTime>now+1000||now-priceTime>300000)throw Error('stale price');
+        if(!Number.isFinite(price)||price<=0||!Number.isSafeInteger(priceTime)||priceTime>now+1000||now-priceTime>30000)throw Error('stale price');
         const indicators=analyzeMarket(candles,book,now);
         // Quote units differ; no cross-quote liquidity or profit ranking is invented.
         const eligible=indicators.volume24>0&&indicators.topDepthQuote>0&&indicators.spread<=0.01;

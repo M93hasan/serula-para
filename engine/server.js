@@ -22,6 +22,7 @@ import { assessPaperReadiness } from './paper-gate.js';
 import { ollamaStatus } from './ollama-status.js';
 import { createLocalGoogleAuth } from './local-google-auth.js';
 import { scannerPaperMarks } from './paper-marks.js';
+import { isFreshMarketPrice } from './market-freshness.js';
 
 export function createServer({ token, simulator, paper = null, account = null, aiProviders = null, cloudAIService = null, market = new MarketData(), universe = new MarketUniverse(), scanner = new MarketScanner({universe}), ai = new AIAnalyst(), accountHistory = null, autoScan = false, googleAuth = null, distDir = resolve('dist'),riskIntervalMs=5000 }) {
   if (typeof token !== 'string' || Buffer.byteLength(token) < 32) throw new Error('Set a random token of at least 32 bytes');
@@ -64,6 +65,7 @@ export function createServer({ token, simulator, paper = null, account = null, a
       try{let body='',size=0;for await(const c of req){size+=c.length;if(size>2048)return res.writeHead(413).end('{"error":"too large"}');body+=c.toString('utf8');}
         const input=JSON.parse(body);if(!input||typeof input!=='object'||Array.isArray(input)||Object.keys(input).some(k=>!['provider','passphrase','symbol','consent'].includes(k))||input.consent!==true||typeof input.symbol!=='string'||!/^[A-Z0-9]{1,20}_[A-Z0-9]{1,20}$/.test(input.symbol))throw Error('INVALID');
         const snapshot=latestMarkets.find(m=>m.symbol===input.symbol);if(!snapshot)throw Error('NO_MARKET');
+         if(!isFreshMarketPrice(snapshot))return res.writeHead(409).end('{"error":"STALE_DATA"}');
         const catalog=await universe.discover();if(!catalog.markets.some(m=>m.symbol===input.symbol&&m.type===1))throw Error('UNVERIFIED');
         const result=await cloudAI.analyze({provider:input.provider,passphrase:input.passphrase,snapshot});result.startedAt=result.time;result.time=Date.now();simulator.saveAI(result);return res.end(JSON.stringify(result));
       }catch{return res.writeHead(400).end('{"error":"provider analysis unavailable"}');}
@@ -111,6 +113,17 @@ export function createServer({ token, simulator, paper = null, account = null, a
         return res.end(JSON.stringify(scanAutomation.status()));
       }catch{return res.writeHead(503).end('{"error":"automation unavailable"}');}
     }
+    // Read-only market snapshot for chart refreshes; never executes a simulation or order.
+    if(req.method==='GET' && req.url==='/api/markets/chart') {
+      try {
+        const snapshot=await market.snapshot({includeBnbPrice:true});
+        latestMarkets=snapshot.markets;
+        return res.end(JSON.stringify(snapshot));
+      } catch(err) {
+        const code=/cooldown|in progress/i.test(err.message)?'RATE_LIMIT':/region restricted/i.test(err.message)?'REGION_RESTRICTED':/stale|incomplete/i.test(err.message)?'STALE_DATA':'MARKET_CONNECTION';
+        return res.writeHead(503).end(JSON.stringify({error:code}));
+      }
+    }
     if(req.method==='GET' && req.url==='/api/markets/scan') {const state=scanner.status();return res.end(JSON.stringify({...state,results:state.results.map(({candles,...item})=>item)}));}
     if(req.method==='POST' && req.url==='/api/markets/scan') {
       if(req.headers.origin!==origin||req.headers['sec-fetch-site']!=='same-origin'||req.headers['content-type']!=='application/json'||req.headers['x-para-request']!=='1')return res.writeHead(403).end('{"error":"forbidden"}');
@@ -147,6 +160,7 @@ export function createServer({ token, simulator, paper = null, account = null, a
         if(!input||typeof input.symbol!=='string'||!/^[A-Z0-9]{1,20}_[A-Z0-9]{1,20}$/.test(input.symbol)||Object.keys(input).length!==1)throw Error('invalid');
         const snapshot=latestMarkets.find(m=>m.symbol===input.symbol);
         if(!snapshot)throw Error('No verified cached market snapshot');
+         if(!isFreshMarketPrice(snapshot))return res.writeHead(409).end('{"error":"STALE_DATA"}');
         const catalog=await universe.discover();
         const approved=catalog.markets.some(m=>m.symbol===input.symbol&&m.type===1);
         if(!approved)throw Error('Unsupported or disabled symbol');
