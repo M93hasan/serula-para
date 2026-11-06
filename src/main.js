@@ -314,7 +314,7 @@ overviewStatus.innerHTML='<h3>İşlem durumları</h3><div class="terminal-status
 $('#view-overview').append(overviewStatus);
 const executionPanel=document.createElement('article');
 executionPanel.className='panel terminal-execution-panel';
-executionPanel.innerHTML='<h3>Emirler ve işlem geçmişi</h3><p id="real-orders-note">GERÇEK · Açık emirler ve geçmiş için salt okunur emir endpoint entegrasyonu henüz doğrulanmadı. Bilinmeyen emirler boş liste olarak gösterilmez.</p><h4>Sanal açık pozisyonlar (emir değildir)</h4><div id="paper-open-positions">Sanal durum henüz alınmadı.</div><h4>Sanal işlem geçmişi</h4><div id="paper-execution-history">Sanal işlem geçmişi henüz alınmadı.</div><h4>Sanal günlük ve toplam kâr/zarar</h4><div id="paper-pnl-report">Rapor henüz alınmadı.</div>';
+executionPanel.innerHTML='<h3>Emirler ve işlem geçmişi</h3><p id="real-orders-note">GERÇEK · Açık emirler ve geçmiş için salt okunur emir endpoint entegrasyonu henüz doğrulanmadı. Bilinmeyen emirler boş liste olarak gösterilmez.</p><h4>Sanal açık pozisyonlar (emir değildir)</h4><div id="paper-open-positions">Sanal durum henüz alınmadı.</div><h4>Sanal işlem geçmişi</h4><div id="paper-execution-history">Sanal işlem geçmişi henüz alınmadı.</div><h4>Sanal günlük ve toplam kâr/zarar</h4><div id="paper-pnl-report">Rapor henüz alınmadı.</div><h4>Gerçek hesap kâr/zararı</h4><p>Henüz hesaplanamıyor: Binance TR gerçek işlem geçmişi, yatırma/çekme ve komisyon kayıtları doğrulanmadan bakiye değer farkı gerçek kâr/zarar sayılamaz.</p>';
 $('#view-history').append(executionPanel);
 const notificationPanel=document.createElement('article');
 notificationPanel.className='panel';
