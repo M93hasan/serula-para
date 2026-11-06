@@ -18,6 +18,7 @@ try {
   const {PaperStore}=await import('../engine/paper-store.js');
   const {WindowsAIProviderVault}=await import('../engine/windows-ai-provider-vault.js');
   const {AccountService}=await import('../engine/account-service.js');
+  const {WindowsBinanceAccountService}=await import('../engine/windows-binance-account-service.js');
   const {AccountSnapshotStore}=await import('../engine/account-snapshot-store.js');
   const {createServer}=await import('../engine/server.js');
   const {createLocalGoogleAuth}=await import('../engine/local-google-auth.js');
@@ -31,7 +32,7 @@ try {
     allowedEmail:process.env.GOOGLE_ALLOWED_EMAIL||'',
     allowedSub:process.env.GOOGLE_ALLOWED_SUB||''
   });
-  const server=createServer({token,simulator:sim,paper,aiProviders:new WindowsAIProviderVault({directory:join(dir,'ai-providers')}),account:new AccountService({path:join(dir,'binance-tr.vault')}),accountHistory,autoScan:true,googleAuth});
+  const server=createServer({token,simulator:sim,paper,aiProviders:new WindowsAIProviderVault({directory:join(dir,'ai-providers')}),account:process.platform==='win32' ? new WindowsBinanceAccountService({path:join(dir,'binance-tr.dpapi')}) : new AccountService({path:join(dir,'binance-tr.vault')}),accountHistory,autoScan:true,googleAuth,legacyBinancePath:join(dir,'binance-tr.vault')});
   server.on('error',error=>{console.error(error.code==='EADDRINUSE'?'8788 portu kullanimda. Acik PARA penceresini kapatin.':'Yerel sunucu baslatilamadi.');sim.close();paper.close();accountHistory.close();process.exitCode=1;});
   server.listen(8788,'127.0.0.1',()=>{
     console.log('\nPARA yerel panel: http://127.0.0.1:8788');
