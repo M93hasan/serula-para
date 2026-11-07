@@ -29,3 +29,9 @@ DİKKAT: Önizleme ve production aynı Worker secret kaynağını paylaşıyorsa
 ## Doğrulama
 
 `npm ci && npm test && npm run build`; sonra gerçek Google test hesabıyla önizleme URL'sinde giriş, yanlış hesap reddi, süre aşımı, logout, yeniden giriş ve oturumsuz API 401 kontrolleri. Henüz gerçek Google üzerinden uçtan uca giriş doğrulanmış değildir. OAuth client secret veya oturum çerezlerini ticket/sohbete göndermeyin.
+
+## İptal edilebilir Web oturumu — entegrasyon dalı
+
+Oturumlar artık `GOOGLE_SESSION_DB` adlı D1 binding ve `cloudflare/schema/google-web-sessions.sql` şemasını gerektirir. Oturum kimliğinin özeti sunucuda saklanır; logout başarılı dönmeden önce ilgili kayıt iptal edilir. Depo yoksa veya doğrulanamazsa giriş ve oturum doğrulaması güvenli biçimde reddedilir. Önceki kayıtlı olmayan çerezler yeniden giriş gerektirir. Süresi dolan kayıtların temizlenmesi için kontrollü bir bakım politikası ayrıca belirlenmelidir.
+
+Staging için production'dan ayrı D1, OAuth istemcisi/callback, test hesapları ve secret'lar kullanın. D1 şemasını yalnız ayrılmış staging veritabanının kimliği doğrulandıktan sonra uygulayın. Bu değişiklik production'a dağıtılmamıştır; gerçek Cloudflare D1 ve Google ile uçtan uca doğrulama bekler. Logout başarısızsa çerezi temizlemek tek başına token'ı iptal etmez; kullanıcıya sunucu tarafı iptalin doğrulanmadığını bildirin.

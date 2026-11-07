@@ -4,6 +4,8 @@
 
 > **Entegrasyon durumu (07.11.2026):** #49, #50, #51, #52, #53, #55 ve #56 `integration/seven-prs` dalında birleştirildi; `main` ile birleştirilmedi. Gerçek emirler kapalıdır ve canlı ortam doğrulamaları tamamlanmamıştır. [Issue #54](https://github.com/M93hasan/serula-para/issues/54) ve [Windows/Web kasa rehberi](docs/vault-windows-web.md) durum ve kurulum ayrıntılarını içerir.
 
+> **Web oturumu:** Entegrasyon dalında sunucu taraflı oturum iptali `GOOGLE_SESSION_DB` ve ayrı D1 şeması gerektirir. Binding veya şema yoksa Web girişi kapalı kalır; mevcut çerezler yeniden giriş gerektirir. [Staging talimatları](docs/GOOGLE_WEB_OAUTH_SETUP.md).
+
 1. [Node.js](https://nodejs.org/) 22.13 veya daha yeni bir sürümü kurun; kurulumdan sonra terminali yeniden açın.
 2. Güncel `main` kaynaklarını GitHub üzerinden edinin (var olan kullanıcı verilerinizi veya `%USERPROFILE%\.para` klasörünü silmeyin). Proje klasöründeki **start-para.cmd** dosyasına çift tıklayın. İlk açılışta internet gerekir; bağımlılıklar indirilir ve panel hazırlanır.
 3. Açılan tarayıcıda, siyah pencerede gösterilen **yerel erişim anahtarını** kopyalayıp “Yerel motor bağlantısı” alanına yapıştırın ve **Bağlan** düğmesine basın. Tarayıcı açılmazsa `http://127.0.0.1:8788` adresini elle açın. Pencereyi açık tutun; kapatmak için Ctrl+C kullanın.

@@ -1,5 +1,7 @@
 # Web önizleme durumu
 
+> **Entegrasyon dalı güncellemesi:** Web Google oturum iptali ayrı `GOOGLE_SESSION_DB` D1 binding ve `cloudflare/schema/google-web-sessions.sql` gerektirir. Bu eski önizleme notu son commit veya kaynak izolasyonunu kanıtlamaz; [güncel Google kurulumunu](GOOGLE_WEB_OAUTH_SETUP.md) inceleyin.
+
 Bu dal PR #11 üzerine kurulmuş deneysel bir hazırlıktır; güvenli oturumla uçtan uca doğrulanmış staging veya production sürümü değildir. Mevcut Cloudflare Builds production bağlantısı `main` dalını kullanıyor; oradaki eksik lockfile sorunu bu dalı oluşturmakla kendiliğinden giderilmez. Main ve production yapılandırmasını değiştirmeyin.
 
 Worker, Cloudflare Access imzasını, issuer ve audience değerlerini doğrulamadıkça paneli ve API'yi açmaz. Test dağıtımında yalnızca ilgili önizlemeye özel Access uygulaması ve erişim politikası, `ACCESS_ISSUER`, `ACCESS_AUD` ve `ANALYSIS_LIMIT` binding'i gerekir. `previews` hız sınırlaması bölgesel ve yaklaşık çalışır; tek başına kapsamlı kötüye kullanım koruması değildir. Başka uygulamaların Access politikasını değiştirmeyin. Çıkış bağlantısı tüm Cloudflare Access oturumlarını sonlandırabilir.

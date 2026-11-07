@@ -52,7 +52,7 @@ test('web logout requires POST, same origin, and request token; clears host-only
     assert.equal(response.status,403);
   }
   const response=await app.fetch(req('/auth/logout',{method:'POST',headers:{Origin:origin,'X-Para-Request':'1'}}),env);
-  assert.equal(response.status,303);
+  assert.equal(response.status,200);
   const setCookie=response.headers.get('Set-Cookie')||'';
   assert.match(setCookie,/__Host-para-session=/);
   assert.match(setCookie,/Max-Age=0/);

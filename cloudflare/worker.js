@@ -15,7 +15,7 @@ export function createWorker({ verify=verifyGoogleSession, market=()=>new Market
   if(url.pathname==='/api/health')return json({status:'google-auth-required',real_orders_enabled:false});
   if(url.pathname==='/auth/google/login'&&request.method==='GET')return googleStart(request,env);
   if(url.pathname==='/auth/google/callback'&&request.method==='GET')return googleFinish(request,env);
-  if(url.pathname==='/auth/logout')return logoutGoogle(request);
+  if(url.pathname==='/auth/logout')return logoutGoogle(request,env);
   let identity;try{identity=await verify(request,env);}catch{
     if(url.pathname.startsWith('/api/'))return json({error:'AUTH_REQUIRED'},401);
     return new Response(loginPage,{status:401,headers:{'Content-Type':'text/html; charset=utf-8','Cache-Control':'no-store','X-Content-Type-Options':'nosniff','Content-Security-Policy':"default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'"}});

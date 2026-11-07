@@ -147,3 +147,25 @@ test('automatic scan stops after HTTP 451 and requires review without additional
   assert.equal(calls,1);
   auto.close();
 });
+test('offline or server failure discards partial results and stops automatic retry',async()=>{
+  for(const failure of ['offline','server']){
+    let calls=0;
+    const scanner=new MarketScanner({
+      universe:{discover:async()=>({exchangeTime:now,markets:[{symbol:'BTC_TRY',type:1},{symbol:'ETH_TRY',type:1},{symbol:'SOL_TRY',type:1}]})},
+      clock:()=>now,sleep:async()=>{},fetchImpl:async url=>{
+        calls++;
+        if(calls===4){if(failure==='offline')throw Error('network offline');return new Response('',{status:503});}
+        const data=url.includes('klines')?candles.map(c=>[c.time,c.open,c.high,c.low,c.close,c.volume,c.closeTime,c.quoteVolume]):url.includes('depth')?book:[{price:'140',time:now-1000}];
+        return Response.json(data);
+      }
+    });
+    const auto=new ScanAutomation(scanner,{clock:()=>now});
+    auto.setEnabled(true);await settle(scanner);auto.tick();
+    assert.equal(scanner.status().status,'unavailable');
+    assert.deepEqual(scanner.status().results,[]);
+    assert.equal(auto.status().enabled,false);
+    assert.throws(()=>auto.setEnabled(true),/REQUIRES_MANUAL_REVIEW/);
+    assert.equal(calls,4);
+    auto.close();
+  }
+});

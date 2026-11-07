@@ -16,6 +16,16 @@ function configured(env,origin){
   if(typeof env.GOOGLE_REDIRECT_URI!=='string'||env.GOOGLE_REDIRECT_URI!==origin+'/auth/google/callback'||!origin.startsWith('https://'))throw Error('AUTH_NOT_CONFIGURED');
   secret(env);
 }
+function sessionDb(env){
+  if(typeof env?.GOOGLE_SESSION_DB?.withSession!=='function')throw Error('SESSION_STORE_UNAVAILABLE');
+  const session=env.GOOGLE_SESSION_DB.withSession('first-primary');
+  if(typeof session?.prepare!=='function')throw Error('SESSION_STORE_UNAVAILABLE');
+  return session;
+}
+async function sessionHash(id){
+  if(typeof id!=='string'||!/^[A-Za-z0-9_-]{43}$/.test(id))throw Error('SESSION_INVALID');
+  return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',encoder.encode(id))),b=>b.toString(16).padStart(2,'0')).join('');
+}
 const random=()=>crypto.getRandomValues(new Uint8Array(32));
 const base64url=bytes=>btoa(String.fromCharCode(...bytes)).replaceAll('+','-').replaceAll('/','_').replace(/=+$/,'');
 async function challenge(verifier){return base64url(new Uint8Array(await crypto.subtle.digest('SHA-256',encoder.encode(verifier))));}
@@ -33,7 +43,7 @@ async function verified(token,env){if(!token||token.length>8192)throw Error('INV
 export async function startGoogle(request,env){
   const origin=new URL(request.url).origin;
   try{
-    configured(env,origin);
+    configured(env,origin);sessionDb(env);
     const state=base64url(random()),nonce=base64url(random()),verifier=base64url(random());
     const flow=await signed({kind:'flow',state,nonce,verifier,origin},env,'10m');
     const url=new URL(GOOGLE_AUTH);
@@ -56,7 +66,11 @@ export async function finishGoogle(request,env,{exchange=fetch,verifyToken}={}){
     if(typeof data.id_token!=='string'||data.id_token.length>16000)throw Error('TOKEN_MISSING');
     const claims=verifyToken?await verifyToken(data.id_token,env): (await jwtVerify(data.id_token,GOOGLE_KEYS,{issuer:['https://accounts.google.com','accounts.google.com'],audience:env.GOOGLE_OAUTH_CLIENT_ID,algorithms:['RS256'],requiredClaims:['sub','exp','iat','nonce']})).payload;
     if(!claims.sub||claims.nonce!==flow.nonce||claims.email_verified!==true||typeof claims.email!=='string'||claims.email.toLowerCase()!==env.GOOGLE_ALLOWED_EMAIL.trim().toLowerCase())throw Error('ACCOUNT_DENIED');
-    const session=await signed({kind:'session',sub:claims.sub,email:claims.email},env,'8h');
+    const sid=base64url(random()), expires=Math.floor(Date.now()/1000)+28800;
+    const session=await signed({kind:'session',sub:claims.sub,email:claims.email,sid},env,expires);
+    const result=await sessionDb(env).prepare('INSERT INTO google_web_sessions (session_hash, subject, expires_at) VALUES (?, ?, ?)')
+      .bind(await sessionHash(sid),claims.sub,expires).run();
+    if(result?.success!==true||result?.meta?.changes!==1)throw Error('SESSION_STORE_UNAVAILABLE');
     return redirect('/',[clear,cookie(SESSION,session,28800)]);
   }catch{return redirect('/',[clear,cookie(SESSION,'',0)]);}
 }
@@ -64,10 +78,29 @@ export async function verifyGoogleSession(request,env){
   configured(env,new URL(request.url).origin);
   const payload=await verified(getCookie(request,SESSION),env);
   if(payload.kind!=='session'||typeof payload.sub!=='string'||!payload.sub||typeof payload.email!=='string'||payload.email.toLowerCase()!==env.GOOGLE_ALLOWED_EMAIL.trim().toLowerCase())throw Error('SESSION_INVALID');
+  const row=await sessionDb(env).prepare('SELECT subject, expires_at FROM google_web_sessions WHERE session_hash = ?')
+    .bind(await sessionHash(payload.sid)).first();
+  if(!row||row.subject!==payload.sub||!Number.isSafeInteger(row.expires_at)||
+    row.expires_at!==payload.exp||row.expires_at<=Math.floor(Date.now()/1000))throw Error('SESSION_INVALID');
   return {id:payload.sub,email:payload.email};
 }
-export function logoutGoogle(request){
+export async function logoutGoogle(request,env){
   const origin=new URL(request.url).origin;
   if(request.method!=='POST'||request.headers.get('Origin')!==origin||request.headers.get('X-Para-Request')!=='1')return fail(403);
-  return redirect('/',[cookie(SESSION,'',0),cookie(FLOW,'',0)]);
+  const clear=[cookie(SESSION,'',0),cookie(FLOW,'',0)];
+  const success=()=>{const h=new Headers({...siteHeaders,'Content-Type':'application/json; charset=utf-8'});for(const c of clear)h.append('Set-Cookie',c);return new Response('{"ok":true}',{status:200,headers:h});};
+  const token=getCookie(request,SESSION);
+  if(!token)return success();
+  try{secret(env);}catch{return new Response('Oturum iptali dogrulanamadi.',{status:503,headers:siteHeaders});}
+  let payload;
+  try{payload=await verified(token,env);}catch{return success();}
+  if(payload.kind!=='session'||typeof payload.sid!=='string'||!/^[A-Za-z0-9_-]{43}$/.test(payload.sid))return success();
+  try{
+    const hash=await sessionHash(payload.sid);
+    const result=await sessionDb(env).prepare('DELETE FROM google_web_sessions WHERE session_hash = ?').bind(hash).run();
+    if(result?.success!==true)throw Error('SESSION_STORE_UNAVAILABLE');
+    return success();
+  }catch{
+    return new Response('Oturum iptali dogrulanamadi.',{status:503,headers:siteHeaders});
+  }
 }
