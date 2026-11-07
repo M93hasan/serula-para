@@ -131,3 +131,19 @@ test('partial candidates are discarded if a later Binance market gets WAF 403',a
   assert.equal(scan.status().results.length,0);
   assert.equal(calls,4);
 });
+test('automatic scan stops after HTTP 451 and requires review without additional market requests',async()=>{
+  let calls=0;
+  const scanner=new MarketScanner({
+    universe:{discover:async()=>({exchangeTime:now,markets:[{symbol:'BTC_TRY',type:1},{symbol:'ETH_TRY',type:1}]})},
+    clock:()=>now,sleep:async()=>{},fetchImpl:async()=>{calls++;return new Response('',{status:451});}
+  });
+  const auto=new ScanAutomation(scanner,{clock:()=>now});
+  auto.setEnabled(true);await settle(scanner);auto.tick();
+  assert.equal(scanner.status().status,'REGION_RESTRICTED');
+  assert.deepEqual(scanner.status().results,[]);
+  assert.equal(auto.status().enabled,false);
+  assert.equal(auto.status().lastError,'REGION_RESTRICTED');
+  assert.throws(()=>auto.setEnabled(true),/REQUIRES_MANUAL_REVIEW/);
+  assert.equal(calls,1);
+  auto.close();
+});
