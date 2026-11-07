@@ -8,6 +8,7 @@ import { RiskStore } from './store.js';
 import { AccountService } from './account-service.js';
 import { WindowsBinanceAccountService } from './windows-binance-account-service.js';
 import { MarketData } from './market-data.js';
+import { diagnoseLocalBinance } from './binance-connection-diagnostic.js';
 import { decide, selectMarket } from './decision.js';
 import { backtest } from './backtest.js';
 import { AIAnalyst } from './ai-analyst.js';
@@ -73,6 +74,31 @@ export function createServer({ token, simulator, paper = null, account = null, a
       return res.writeHead(403).end('{"error":"forbidden"}');
     }
     if(req.method==='GET' && req.url==='/status') return res.end(JSON.stringify(simulator.status()));
+    if(req.method==='GET'&&req.url==='/api/binance-tr/diagnostic'){
+      try{return res.end(JSON.stringify(await diagnoseLocalBinance()));}
+      catch{return res.writeHead(503).end('{"error":"NETWORK_DIAGNOSTIC_FAILED"}');}
+    }
+    if(req.method==='POST'&&req.url==='/api/binance-tr/open-orders'){
+      if(req.headers.origin!==origin||req.headers['sec-fetch-site']!=='same-origin'||
+        req.headers['content-type']!=='application/json'||req.headers['x-para-request']!=='1')
+        return res.writeHead(403).end('{"error":"forbidden"}');
+      if(!account?.openOrders)return res.writeHead(503).end('{"error":"ORDER_READER_UNAVAILABLE"}');
+      let body='',size=0;
+      try{
+        for await(const chunk of req){size+=chunk.length;if(size>2048)return res.writeHead(413).end('{"error":"too large"}');body+=chunk.toString('utf8');}
+        const input=JSON.parse(body);
+        if(!input||typeof input!=='object'||Array.isArray(input)||
+          Object.keys(input).some(k=>!['symbol','limit','passphrase'].includes(k)))
+          throw Error('INVALID_ORDER_QUERY');
+        const orders=await account.openOrders(input.passphrase,{symbol:input.symbol,limit:input.limit??100});
+        return res.end(JSON.stringify({readOnly:true,symbol:input.symbol,asOf:Date.now(),orders,complete:true}));
+      }catch(error){
+        const allowed=['VAULT_UNLOCK_FAILED','EXCHANGE_READ_FAILED','INCOMPLETE_ORDER_DATA','INVALID_ORDER_DATA','INVALID_ORDER_QUERY'];
+        const code=allowed.includes(error.message)?error.message:'INVALID_ORDER_QUERY';
+        return res.writeHead(code==='EXCHANGE_READ_FAILED'?503:400).end(JSON.stringify({error:code}));
+      }
+    }
+
     if(req.method==='POST' && req.url==='/api/ai/providers/analyze') {
       if(req.headers.origin!==origin||req.headers['sec-fetch-site']!=='same-origin'||req.headers['content-type']!=='application/json'||req.headers['x-para-request']!=='1')return res.writeHead(403).end('{"error":"forbidden"}');
       if(!cloudAI)return res.writeHead(503).end('{"error":"provider unavailable"}');

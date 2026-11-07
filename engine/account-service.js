@@ -21,6 +21,27 @@ export class AccountService {
     try {writeFileSync(temporary,encrypted,{flag:'wx',mode:0o600});renameSync(temporary,this.#path);} finally {try {unlinkSync(temporary);} catch(e) {if(e.code!=='ENOENT') throw e;}}
   }); }
   remove(passphrase) { return this.#exclusive(()=>{if(typeof passphrase!=='string'||passphrase.length>512) throw Error('Invalid input');loadVault(this.#path,passphrase);unlinkSync(this.#path);}); }
+  async openOrders(passphrase,{symbol,limit=100}={}){
+    if(typeof passphrase!=='string'||passphrase.length>512)throw Error('Invalid input');
+    if(typeof symbol!=='string'||!/^[A-Z0-9]{1,20}_[A-Z0-9]{1,20}$/.test(symbol)
+      ||!Number.isInteger(limit)||limit<1||limit>500)throw Error('INVALID_ORDER_QUERY');
+    let keys;
+    try{keys=loadVault(this.#path,passphrase);}catch{throw Error('VAULT_UNLOCK_FAILED');}
+    let response;
+    try{response=await this.#client.openOrders({...keys,symbol,limit});}
+    catch{throw Error('EXCHANGE_READ_FAILED');}
+    const orders=response?.data?.list;
+    if(!Array.isArray(orders)||orders.length>=limit)throw Error('INCOMPLETE_ORDER_DATA');
+    return orders.map(order=>{
+      if(typeof order?.orderId!=='string' && !Number.isSafeInteger(order?.orderId))throw Error('INVALID_ORDER_DATA');
+      if(order.symbol!==symbol||![0,1,2,3,4,5,6,7,8,9].includes(order.status))throw Error('INVALID_ORDER_DATA');
+      if(typeof order.clientId!=='string'||order.clientId.length>128)throw Error('INVALID_ORDER_DATA');
+      return {orderId:String(order.orderId),symbol:order.symbol,clientId:order.clientId,
+        side:order.side,type:order.type,status:order.status,
+        price:String(order.price),origQty:String(order.origQty),executedQty:String(order.executedQty),
+        createTime:order.createTime};
+    });
+  }
   async balance(passphrase) {
     if(typeof passphrase!=='string'||passphrase.length>512) throw Error('Invalid input');
     let keys;try { keys=loadVault(this.#path,passphrase); } catch { throw Error('VAULT_UNLOCK_FAILED'); }

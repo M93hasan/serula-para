@@ -21,6 +21,17 @@ export class BinanceTR {
   }
   time() { return this.#get('/open/v1/common/time'); }
   symbols() { return this.#get('/open/v1/common/symbols'); }
+  // Binance TR official order listing. type=1 restricts to ACTIVE orders.
+  // No POST/DELETE order or cancel methods are exposed by this adapter.
+  openOrders({apiKey,secretKey,symbol,limit=100}){
+    if(!apiKey||!secretKey)throw Error('Credentials required');
+    if(typeof symbol!=='string'||!/^[A-Z0-9]{1,20}_[A-Z0-9]{1,20}$/.test(symbol)
+      ||!Number.isInteger(limit)||limit<1||limit>500)throw Error('Invalid order query');
+    const query=new URLSearchParams({symbol,type:'1',limit:String(limit),
+      timestamp:String(this.#clock()),recvWindow:'5000'}).toString();
+    const signature=createHmac('sha256',secretKey).update(query).digest('hex');
+    return this.#get('/open/v1/orders',query+'&signature='+signature,apiKey);
+  }
   account({ apiKey, secretKey }) {
     if (!apiKey || !secretKey) throw new Error('Credentials required');
     const query = new URLSearchParams({ timestamp: String(this.#clock()), recvWindow: '5000' }).toString();
