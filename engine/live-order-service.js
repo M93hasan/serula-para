@@ -154,8 +154,24 @@ export class LiveOrderService {
     const cancelRequested=[],cancelUnknown=[],retained=[];
     for(const order of check.openOrders){
       if(this.#gate({action:'emergency-cancel',order,reason})!==true){retained.push(order);continue;}
-      try{await this.#client.cancelByOrderId(order.orderId);cancelRequested.push(order);}
-      catch{cancelUnknown.push(order);this.#risk.halt('CANCEL_OUTCOME_UNKNOWN');}
+      // External exchange orders have no local clientId. Claim the cancellation
+      // durably before the only permitted POST; never retry an unknown outcome,
+      // including after a restart or a second HALT request.
+      let claimed;
+      try{
+        claimed=this.#journal.claimExternalCancel({symbol:order.symbol,orderId:order.orderId},this.#clock());
+      }catch{
+        this.#risk.halt('CANCEL_OUTCOME_UNKNOWN');retained.push(order);continue;
+      }
+      if(!claimed){retained.push(order);continue;}
+      try{
+        await this.#client.cancelByOrderId(order.orderId);
+        this.#journal.acknowledgeExternalCancel({symbol:order.symbol,orderId:order.orderId});
+        cancelRequested.push(order);
+      }catch{
+        cancelUnknown.push(order);
+        this.#risk.halt('CANCEL_OUTCOME_UNKNOWN');
+      }
     }
     return {halted:true,reason:this.#risk.status().reason,cancelRequested,cancelUnknown,retained,
       complete:check.openOrders.length===0};
