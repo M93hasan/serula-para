@@ -4,6 +4,7 @@ import {dirname} from 'node:path';
 import {windowsDpapi} from './windows-ai-provider-vault.js';
 import {loadVault} from './vault.js';
 import {BinanceTR} from './binance-tr.js';
+import {readOpenOrders} from './account-service.js';
 
 const credential = value => typeof value === 'string' && value.length > 0 && value.length <= 512 && !/[\u0000-\u001f\u007f]/.test(value);
 const decimal = value => typeof value === 'string' && /^\d{1,40}(?:\.\d{1,40})?$/.test(value);
@@ -54,6 +55,11 @@ export class WindowsBinanceAccountService {
     if(passphrase!==undefined)throw Error('INVALID_INPUT');
     this.#read();unlinkSync(this.#path);
   });}
+  async openOrders(passphrase, query){
+    if(passphrase!==undefined)throw Error('INVALID_INPUT');
+    const keys=this.#exclusive(()=>this.#read());
+    return readOpenOrders(this.#client,keys,query);
+  }
   async balance(passphrase){
     if(passphrase!==undefined)throw Error('INVALID_INPUT');
     const keys=this.#exclusive(()=>this.#read());

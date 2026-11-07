@@ -51,3 +51,15 @@ test('DPAPI errors and damaged ciphertext fail closed, keeping original file',t=
   writeFileSync(path,JSON.stringify({...JSON.parse(original),data:'bad'}));
   assert.throws(()=>good.remove(),/VAULT_UNLOCK_FAILED/);
 });
+test('DPAPI vault supports read-only open orders and rejects incomplete results',async t=>{
+  const dir=mkdtempSync(join(tmpdir(),'para-binance-orders-'));t.after(()=>rmSync(dir,{recursive:true,force:true}));
+  let request; let rows=[{orderId:42,symbol:'BTC_TRY',clientId:'a',status:0,price:'1',origQty:'2',executedQty:'0'}];
+  const vault=new WindowsBinanceAccountService({path:join(dir,'vault'),protector,client:{openOrders:async input=>{request=input;return {data:{list:rows}};}}});
+  vault.save({apiKey:'key',secretKey:'secret'});
+  const orders=await vault.openOrders(undefined,{symbol:'BTC_TRY',limit:2});
+  assert.equal(orders[0].orderId,'42');assert.deepEqual(request,{apiKey:'key',secretKey:'secret',symbol:'BTC_TRY',limit:2});
+  await assert.rejects(vault.openOrders('password',{symbol:'BTC_TRY'}),/INVALID_INPUT/);
+  await assert.rejects(vault.openOrders(undefined,{symbol:'BTC_TRY',limit:1}),/INCOMPLETE_ORDER_DATA/);
+  rows=[{...rows[0],symbol:'ETH_TRY'}];
+  await assert.rejects(vault.openOrders(undefined,{symbol:'BTC_TRY',limit:2}),/INVALID_ORDER_DATA/);
+});

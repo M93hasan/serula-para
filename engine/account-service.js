@@ -23,12 +23,26 @@ export class AccountService {
   remove(passphrase) { return this.#exclusive(()=>{if(typeof passphrase!=='string'||passphrase.length>512) throw Error('Invalid input');loadVault(this.#path,passphrase);unlinkSync(this.#path);}); }
   async openOrders(passphrase,{symbol,limit=100}={}){
     if(typeof passphrase!=='string'||passphrase.length>512)throw Error('Invalid input');
-    if(typeof symbol!=='string'||!/^[A-Z0-9]{1,20}_[A-Z0-9]{1,20}$/.test(symbol)
-      ||!Number.isInteger(limit)||limit<1||limit>500)throw Error('INVALID_ORDER_QUERY');
     let keys;
     try{keys=loadVault(this.#path,passphrase);}catch{throw Error('VAULT_UNLOCK_FAILED');}
+    return readOpenOrders(this.#client,keys,{symbol,limit});
+  }
+
+  async balance(passphrase) {
+    if(typeof passphrase!=='string'||passphrase.length>512) throw Error('Invalid input');
+    let keys;try { keys=loadVault(this.#path,passphrase); } catch { throw Error('VAULT_UNLOCK_FAILED'); }
+    let response;try { response=await this.#client.account(keys); } catch { throw Error('EXCHANGE_READ_FAILED'); }
+    const assets=response?.data?.accountAssets;
+    if (!Array.isArray(assets)||assets.length>5000) throw Error('Unexpected response');
+    const seen=new Set();return assets.map(({asset,free,locked})=>{if(typeof asset!=='string'||!/^[-A-Za-z0-9_]{1,32}$/.test(asset)||seen.has(asset)||!decimal(free)||!decimal(locked))throw Error('Unexpected response');seen.add(asset);return {asset,free,locked};});
+  }
+}
+
+export async function readOpenOrders(client, keys, {symbol,limit=100}={}){
+    if(typeof symbol!=='string'||!/^[A-Z0-9]{1,20}_[A-Z0-9]{1,20}$/.test(symbol)
+      ||!Number.isInteger(limit)||limit<1||limit>500)throw Error('INVALID_ORDER_QUERY');
     let response;
-    try{response=await this.#client.openOrders({...keys,symbol,limit});}
+    try{response=await client.openOrders({...keys,symbol,limit});}
     catch{throw Error('EXCHANGE_READ_FAILED');}
     const orders=response?.data?.list;
     if(!Array.isArray(orders)||orders.length>=limit)throw Error('INCOMPLETE_ORDER_DATA');
@@ -41,13 +55,4 @@ export class AccountService {
         price:String(order.price),origQty:String(order.origQty),executedQty:String(order.executedQty),
         createTime:order.createTime};
     });
-  }
-  async balance(passphrase) {
-    if(typeof passphrase!=='string'||passphrase.length>512) throw Error('Invalid input');
-    let keys;try { keys=loadVault(this.#path,passphrase); } catch { throw Error('VAULT_UNLOCK_FAILED'); }
-    let response;try { response=await this.#client.account(keys); } catch { throw Error('EXCHANGE_READ_FAILED'); }
-    const assets=response?.data?.accountAssets;
-    if (!Array.isArray(assets)||assets.length>5000) throw Error('Unexpected response');
-    const seen=new Set();return assets.map(({asset,free,locked})=>{if(typeof asset!=='string'||!/^[-A-Za-z0-9_]{1,32}$/.test(asset)||seen.has(asset)||!decimal(free)||!decimal(locked))throw Error('Unexpected response');seen.add(asset);return {asset,free,locked};});
-  }
 }
