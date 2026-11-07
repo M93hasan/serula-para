@@ -15,6 +15,9 @@ if(report.hasWafBlock){
     console.log('No automatic alternate exchange/host, synthetic quote, or real trading should be used. Ask Binance TR support about the blocked market API host.');
   } else console.log('HTTP 403 WAF block. Do not repeatedly retry blocked endpoints. Contact Binance TR support.');
   process.exitCode=2;
+}else if(report.targets.some(t=>t.status!=='REACHABLE')){
+  console.log('Public connectivity is not fully verified. No market quote request will be made; resolve the reported block, rate limit or network error first.');
+  process.exitCode=1;
 }else{
   try{
     const result=await new MarketData().snapshot({symbol:'BTC_TRY'});

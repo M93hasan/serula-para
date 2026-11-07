@@ -1,6 +1,6 @@
 # Windows yerel kurulum
 
-> **06.11.2026 güncel durum:** Bu sayfa **main** sürümündeki yerel Binance kasası için geçerlidir. Parolasız Windows Binance DPAPI geçişi [PR #50](https://github.com/M93hasan/serula-para/pull/50), Local/Web ve OTP [PR #49](https://github.com/M93hasan/serula-para/pull/49) içinde taslaktır; main'de etkin değildir. [Görev #54 durum raporu](TASK_54_STATUS_2026-11-06.md) ve CI sonuçlarını kontrol edin.
+> **07.11.2026 entegrasyon durumu:** `integration/seven-prs` Windows DPAPI, Local/Web seçimi ve OTP değişikliklerini içerir; bu dal `main` ile birleştirilmemiştir. Windows kasası ve eski kasanın açık aktarımı için [Windows/Web kasa rehberini](vault-windows-web.md) izleyin. Aşağıdaki parola ile kasa komutları eski kasa ve Windows dışı kurulumlar içindir.
 >
 > Gerçek emir gönderimi ve para çekme yetkisi **KAPALIDIR**. API anahtarını hiçbir zaman sohbet/GitHub'a aktarmayın; `%USERPROFILE%\.para` içeriğini değiştirmeyin veya silmeyin. `api.binance.me` üzerinden fiyat kontrolü Windows'ta HTTP 403 gördüğünden **gerçek canlı fiyatlar doğrulanmış değildir**.
 
@@ -18,4 +18,4 @@ Geçici panel erişim anahtarı oluşturun: `$env:PARA_LOCAL_TOKEN = node -e "co
 
 Linux'ta Node 22.13+ ile aynı komutlar ve `~/.para` kullanılır. Yerel servisi internete veya ters proxy'ye açmayın. Workers ya da uzaktan erişim için ayrı güvenli mimari gereklidir.
 
-Panelde **Ayarlar → Binance TR API** alanına salt okunur API Key ve API Secret ile kasa parolasını girip Kaydet’e basın. Önceden kasa varsa parolayı ve yeni bilgileri girip Değiştir kullanın. Bağlantıyı Test Et, parolayla kasayı açıp Binance TR hesap varlıklarını salt okunur sorgular. Sil, parolayla yerel kasayı kaldırır; Binance TR üzerindeki anahtarı iptal etmez. Anahtarları ekranda, sohbetlerde veya GitHub’da paylaşmayın. Gerçek işlemler kapalıdır.
+Windows entegrasyon panelinde **Ayarlar → Binance TR API** alanına salt okunur API Key ve API Secret girip Kaydet’e basın; DPAPI sonraki okumalarda parola istemez. Windows dışı veya eski parola kasasında kasa parolası gerekir. Önceden kasa varsa parolayı ve yeni bilgileri girip Değiştir kullanın. Bağlantıyı Test Et, ilgili kasayı açıp Binance TR hesap varlıklarını salt okunur sorgular. Sil, yerel kasayı kaldırır; Binance TR üzerindeki anahtarı iptal etmez. Anahtarları ekranda, sohbetlerde veya GitHub’da paylaşmayın. Gerçek işlemler kapalıdır.

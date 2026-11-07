@@ -20,8 +20,8 @@ Binance TR belgelerinde **HTTP 403 = WAF güvenlik duvarı kuralı ihlali**. Win
 - Yeni uygulama uçları yalnız girişten sonra çalışır; POST okumalarında Origin, Sec-Fetch-Site ve X-Para-Request denetimi uygulanır.
 - Bu dalda emir oluşturma, emir iptal etme, otomatik AL/SAT, üretim veritabanı veya gizli anahtar değişikliği bulunmaz.
 
-## Birleştirme bağımlılıkları
-Bu PR `main` tabanlıdır. Taslak PR #49 ve #50 henüz `main` üzerinde değilse çakışabilecek `src/main.js` ve `engine/server.js` kodlarının tek bir entegrasyon PR'ında gözden geçirilmesi gerekir. DPAPI için parola gerektirmeyen açık emir sorgusu, PR #50'nin `WindowsBinanceAccountService` sınıfına ayrıca uyarlanmalıdır.
+## Entegrasyon durumu
+Yedi PR `integration/seven-prs` dalında birleşti; Windows DPAPI kasasında salt okunur açık emir sorgusu ortak yanıt doğrulamasını kullanır. `main` henüz birleştirilmedi. Gerçek Windows hesabıyla test bekleniyor.
 
 ## Güvenilir sonuca ulaşmak
 Gerçek bakiye/açık emir tutarları yalnızca kullanıcı cihazındaki yetkili Binance TR hesabının imzalı gerçek yanıtlarından doğrulanabilir. Sadece GitHub Actions ve sentetik testler bu sonuca kanıt değildir. Gerçek emirler daima kapalı kalmalıdır.
