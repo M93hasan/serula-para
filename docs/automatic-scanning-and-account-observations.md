@@ -4,7 +4,7 @@
 
 Windows yerel paneli (`node scripts/start-local.js`) başlatıldığında **yalnızca halka açık piyasa bilgileri** için tarama otomatik etkinleşir. Tarama mevcut Binance TR uygun spot katalog verilerini kullanır, pariteleri sırayla inceler ve OpenTerminal'de beş saniyede bir yenilenen işlenen / aday / durum sayaçları gösterir.
 
-Her uygun aday için kural tabanlı **AL / SAT / BEKLE araştırma sinyali** hesaplanabilir. Bu sinyal AI doğrulaması, risk onayı, sanal emir veya gerçek emir değildir. Model ve haber doğrulaması eksikse AI yolu **BEKLE** kalır. Fiyat tazeliği, makas ve veri yokluğunda güvenli biçimde BEKLE olur.
+Tarayıcı piyasa araştırma adaylarını ve metriklerini gösterir; doğrulanmış ücret, fiyat kayması, beklenen hareket ve risk kaynakları mevcut olmadığından araştırma sinyali **BEKLE** kalır. Varsayımsal maliyetler gerçek veri sayılmaz. Bu etiket AI doğrulaması, risk onayı, sanal emir veya gerçek emir değildir. Fiyat tazeliği, makas ve veri yokluğunda da güvenli biçimde BEKLE olur.
 
 Tamamlanan tarama en erken 30 dakika sonra yeniden denenir. Rate-limit (418/429), bölgesel erişim (451) veya genel ulaşılmazlık durumunda otomasyon kendini kapatır; hata manuel incelenmeden otomatik yeniden açılmaz. Uygulama kapalıysa tarama çalışmaz. Kullanıcı panelden otomasyonu kapatabilir/açabilir; açmak sanal işlemi başlatmaz.
 

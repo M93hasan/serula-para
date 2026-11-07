@@ -1,4 +1,4 @@
-import { decide } from './decision.js';
+import { assessScalpingCosts } from './scalping-cost-gate.js';
 import { isFreshMarketPrice } from './market-freshness.js';
 const HOUR=3600000;
 const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
@@ -65,10 +65,14 @@ export class MarketScanner {
           indicators.maxHourlyMove<=0.09&&indicators.volatility<=0.04;
         const eligible=movementSafe&&indicators.volume24>0&&indicators.topDepthQuote>0&&indicators.spread<=0.01;
         const reason=!movementSafe?'Ani fiyat hareketi veya oynaklık risk filtresini aştı.':eligible
-          ?'Kural tabanlı araştırma sinyali; AI ve risk onayı gerekli.'
+          ?'Piyasa araştırma adayı; doğrulanmış maliyet ve risk verisi gerekli.'
           :'Hacim, derinlik veya makas yetersiz.';
-        const signal=eligible?decide(m.symbol,candles):null;
-        this.#state.results.push({symbol:m.symbol,baseAsset:m.baseAsset,quoteAsset:m.quoteAsset,status:eligible?'candidate':'excluded',researchSignal:signal?.action??'BEKLE',signalReason:signal?.reason??'Piyasa ön filtreleri sağlanmadı.',signalScore:signal?.score??0,reason,price,priceTime,asOf:now,indicators:{...indicators,liveMove,latestHourlyMove},candles});
+        // No independently verified fee schedule, slippage, expected move or risk
+        // source is wired here. The filter must remain closed rather than treating
+        // the display-only assumptions as verified costs. Candidate status remains
+        // a market-data research label and never authorizes an order.
+        const costAssessment=assessScalpingCosts({marketAsOf:priceTime,now});
+        this.#state.results.push({symbol:m.symbol,baseAsset:m.baseAsset,quoteAsset:m.quoteAsset,status:eligible?'candidate':'excluded',researchSignal:'BEKLE',signalReason:eligible?'Doğrulanmış maliyet ve net beklenti bulunamadı.':'Piyasa ön filtreleri sağlanmadı.',signalScore:0,costAssessment,reason,price,priceTime,asOf:now,indicators:{...indicators,liveMove,latestHourlyMove},candles});
       }catch(e){if(generation!==this.#generation)return;if(['RATE_LIMIT','REGION_RESTRICTED','WAF_BLOCKED'].includes(e.message)){this.#state.status=e.message;this.#state.results=[];this.#state.finishedAt=this.#clock();return;}this.#state.results.push({symbol:m.symbol,status:'unavailable',researchSignal:'BEKLE',reason:'Güncel veya geçerli veri yok.'});}
     }
     this.#state.status='complete';this.#state.finishedAt=this.#clock();

@@ -12,9 +12,19 @@ function validMutation(request) {
     request.headers.get('x-para-request') === '1';
 }
 async function payload(request) {
-  const text=await request.text();
-  if(Buffer.byteLength(text)>1024)throw Error('SIZE');
-  const data=JSON.parse(text);
+  const reader=request.body?.getReader();
+  if(!reader)throw Error('DATA');
+  const chunks=[];let size=0;
+  try{
+    while(true){
+      const {done,value}=await reader.read();
+      if(done)break;
+      size+=value.byteLength;
+      if(size>1024){void reader.cancel().catch(()=>{});throw Error('SIZE');}
+      chunks.push(value);
+    }
+  }finally{reader.releaseLock();}
+  const data=JSON.parse(Buffer.concat(chunks,size).toString('utf8'));
   if(!data||Array.isArray(data)||typeof data!=='object')throw Error('DATA');
   return data;
 }
